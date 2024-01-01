@@ -4,6 +4,6 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="FSOTClass.h" />
+    <ClInclude Include="maths.h" />
   </ItemGroup>
 </Project>

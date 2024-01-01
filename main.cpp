@@ -1,4 +1,4 @@
-#include "FSOTClass.h"
+#include "maths.h"
 #include <random>
 #include <vector>
 
@@ -22,6 +22,20 @@ int main(int argc, char** argv)
 	static const int c_batchSize = 64;
 	static const int c_iterationCount = 1024;
 
+	// Generate starting points
+	std::vector<float2> points(c_numPoints);
+	{
+		std::mt19937 rng = GetRNG(0);
+		std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+
+		for (float2& p : points)
+		{
+			p.x = dist(rng);
+			p.y = dist(rng);
+		}
+	}
+
+	// FSOT
 	for (int iterationIndex = 0; iterationIndex < c_iterationCount; ++iterationIndex)
 	{
 		for (int batchIndex = 0; batchIndex < c_batchSize; ++batchIndex)
@@ -29,7 +43,13 @@ int main(int argc, char** argv)
 			std::mt19937 rng = GetRNG(iterationIndex * c_batchSize + batchIndex);
 
 
+			// TODO: select a class
+			// TODO: select a subclass: z in [0,1]
+			// TODO: projection, calculate shift, calculate shift adjustments!
 		}
+
+		// TODO: apply averaged shift adjustments
+		// TODO: report progress
 	}
 
 	return 0;
@@ -44,6 +64,9 @@ A class has...
 FSOT PAPER NOTES:
 * FSOT paper has batch size of 64 by default. 4096 iterations. 4096 points.
 * they make random points in space and project (not jitter, random!), instead of doing equal area points on the line. getInverseRadonNCube()
+
+BLOG:
+* first, compare blue noise points in square here vs last method. (maybe turn off the features in this one?)
 
 TODO:
 ! you need to figure out what the gradient scaling is all about. it improves quality, fixes that "overconvergence" thing.
