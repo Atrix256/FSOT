@@ -264,31 +264,37 @@ void GeneratePoints(int numPoints, int batchSize, int numIterations, const char*
 			float pointCountScalingFactor = float(batchData.projections.size()) / float(numPoints);
 			for (size_t i = 0; i < batchData.sorted.size(); ++i)
 			{
-				float targetProjection = ((float(i) + 0.5f) / float(batchData.sorted.size()));
+				float projection = batchData.projections[batchData.sorted[i]];
+				float projectionTarget = FSOTClass.ICDF((float(i) + 0.5f) / float(batchData.sorted.size()), direction);
 
-				targetProjection = FSOTClass.ICDF(targetProjection, direction);
+				float s = projectionTarget - projection;
 
-				float projDiff = targetProjection - batchData.projections[batchData.sorted[i]];
+				int lastIndex = std::max(int(i) - 1, 0);
+				int nextIndex = std::min(int(i) + 1, int(batchData.sorted.size()) - 1);
 
-				float gradientScalingFactor = 1.0f;
-				if (useGradientScalingFactor)
+				if (lastIndex == nextIndex)
 				{
-					float targetProjectionStart = FSOTClass.ICDF((float(i)) / float(batchData.sorted.size()), direction);
-					float targetProjectionEnd = FSOTClass.ICDF((float(i) + 1.0f) / float(batchData.sorted.size()), direction);
-
-					float numerator = (FSOTClass.ICDF(1.0f, direction) - FSOTClass.ICDF(0.0f, direction)) / float(batchData.sorted.size());
-					float denominator = targetProjectionEnd - targetProjectionStart;
-
-					gradientScalingFactor = numerator / denominator;
+					int ijkl = 0;
 				}
 
-				batchData.batchDirections[batchData.sorted[i]].x = direction.x * projDiff * gradientScalingFactor * pointCountScalingFactor;
-				batchData.batchDirections[batchData.sorted[i]].y = direction.y * projDiff * gradientScalingFactor * pointCountScalingFactor;
+				float normalise_factor = 1.0f;
+				if (useGradientScalingFactor)
+				{
+					normalise_factor = (FSOTClass.ICDF((float(nextIndex)) / float(batchData.sorted.size()), direction) - FSOTClass.ICDF((float(lastIndex)) / float(batchData.sorted.size()), direction)) / float(nextIndex - lastIndex);
+					normalise_factor *= float(batchData.projections.size());
+				}
+
+				float delta = pointCountScalingFactor * s / normalise_factor;
+
+				if (isnan(delta) || isinf(delta))
+				{
+					int ijkl = 0;
+				}
+
+				batchData.batchDirections[batchData.sorted[i]].x = direction.x * delta;
+				batchData.batchDirections[batchData.sorted[i]].y = direction.y * delta;
 			}
 		}
-
-		// TODO: don't average in the ones that didn't get samples!! need to count samples per [i] maybe.
-		// TODO: both below, as well as above? idk.
 
 		// average all batch directions into batchDirections[0]
 		{
@@ -342,8 +348,8 @@ int main(int argc, char** argv)
 	{
 		FSOTClass_UniformSquare a;
 
-		GeneratePoints(1000, 64, 1000, "out/old", 5, false, { &a });
-		GeneratePoints(1000, 64, 1000, "out/new", 5, true, { &a });
+		GeneratePoints(1000, 64, 1000, "out/old", 10, false, { &a });
+		GeneratePoints(1000, 64, 1000, "out/new", 10, true, { &a });
 	}
 
 	return 0;
