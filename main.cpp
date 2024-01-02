@@ -7,6 +7,8 @@ static const int c_pointImageSize = 256;
 
 static const bool c_writePointSetTxt = false;
 
+static const bool c_drawNonGaussImage = true;
+
 static const bool c_drawGaussImage = false;
 static const int c_pointImageGaussSize = 512;
 static const float c_pointImageGaussBlobSigma = 1.5f;
@@ -44,10 +46,24 @@ public:
 	virtual void ProjectPoints(const std::vector<float2>& points, float subclassZ, const float2& direction, std::vector<float>& projections) const = 0;
 };
 
-class FSOTClass_UniformSquare : public FSOTClassBase
+template <typename TICDF, typename TFilter>
+class FSOTClass : public FSOTClassBase, public TICDF, public TFilter
+{
+	float ICDF(float y, const float2& direction) const override final
+	{
+		return TICDF::ICDF(y, direction);
+	}
+
+	void ProjectPoints(const std::vector<float2>& points, float subclassZ, const float2& direction, std::vector<float>& projections) const override final
+	{
+		return TFilter::ProjectPoints(points, subclassZ, direction, projections);
+	}
+};
+
+class ICDF_UniformSquare
 {
 public:
-	float ICDF(float y, const float2& direction) const override
+	float ICDF(float y, const float2& direction) const
 	{
 		// Convert y: square is in [-0.5, 0.5], but y is in [0, 1].
 		y = y - 0.5f;
@@ -58,8 +74,12 @@ public:
 		// The CDF is in [-0.5, 0.5], but we want the points to be in [-1,1]
 		return x * 2.0f;
 	}
+};
 
-	void ProjectPoints(const std::vector<float2>& points, float subclassZ, const float2& direction, std::vector<float>& projections) const override
+class Filter_All
+{
+public:
+	void ProjectPoints(const std::vector<float2>& points, float subclassZ, const float2& direction, std::vector<float>& projections) const
 	{
 		// project all the points
 		projections.resize(points.size());
@@ -130,29 +150,39 @@ void SavePointSet(const std::vector<float2>& points, const char* baseFileName, i
 
 		for (size_t index = 0; index < points.size(); ++index)
 		{
-			int x = (int)Clamp((points[index].x * 0.5f + 0.5f) * float(c_pointImageSize - 1), 0.0f, float(c_pointImageSize - 1));
-			int y = (int)Clamp((points[index].y * 0.5f + 0.5f) * float(c_pointImageSize - 1), 0.0f, float(c_pointImageSize - 1));
-			pixels[y * c_pointImageSize + x] = 0;
+			if (c_drawNonGaussImage)
+			{
+				int x = (int)Clamp((points[index].x * 0.5f + 0.5f) * float(c_pointImageSize - 1), 0.0f, float(c_pointImageSize - 1));
+				int y = (int)Clamp((points[index].y * 0.5f + 0.5f) * float(c_pointImageSize - 1), 0.0f, float(c_pointImageSize - 1));
+				pixels[y * c_pointImageSize + x] = 0;
+			}
 
-			unsigned char color[] = { 0 };
-			x = (int)Clamp((points[index].x * 0.5f + 0.5f) * float(c_pointImageGaussSize - 1), 0.0f, float(c_pointImageGaussSize - 1));
-			y = (int)Clamp((points[index].y * 0.5f + 0.5f) * float(c_pointImageGaussSize - 1), 0.0f, float(c_pointImageGaussSize - 1));
-			PlotGaussian<1>(pixelsGauss, c_pointImageGaussSize, c_pointImageGaussSize, x, y, c_pointImageGaussBlobSigma, color);
+			if (c_drawGaussImage)
+			{
+				unsigned char color[] = { 0 };
+				int x = (int)Clamp((points[index].x * 0.5f + 0.5f) * float(c_pointImageGaussSize - 1), 0.0f, float(c_pointImageGaussSize - 1));
+				int y = (int)Clamp((points[index].y * 0.5f + 0.5f) * float(c_pointImageGaussSize - 1), 0.0f, float(c_pointImageGaussSize - 1));
+				PlotGaussian<1>(pixelsGauss, c_pointImageGaussSize, c_pointImageGaussSize, x, y, c_pointImageGaussBlobSigma, color);
+			}
 		}
 
-		char fileName[1024];
-		sprintf_s(fileName, "%s_%i_%i.png", baseFileName, index, total);
-		stbi_write_png(fileName, c_pointImageSize, c_pointImageSize, 1, pixels.data(), 0);
+		if (c_drawNonGaussImage)
+		{
+			char fileName[1024];
+			sprintf_s(fileName, "%s_%i_%i.png", baseFileName, index, total);
+			stbi_write_png(fileName, c_pointImageSize, c_pointImageSize, 1, pixels.data(), 0);
+		}
 
 		if (c_drawGaussImage)
 		{
+			char fileName[1024];
 			sprintf_s(fileName, "%s_%i_%i.gauss.png", baseFileName, index, total);
 			stbi_write_png(fileName, c_pointImageGaussSize, c_pointImageGaussSize, 1, pixelsGauss.data(), 0);
 		}
 	}
 }
 
-void GeneratePoints(int numPoints, int batchSize, int numIterations, const char* baseFileName, int numProgressImages, bool useGradientScalingFactor, const std::vector<const FSOTClassBase*>& classes)
+void GeneratePoints(int numPoints, int batchSize, int numIterations, const char* baseFileName, int numProgressImages, bool useGradientScalingFactor, bool stratifyLine, const std::vector<const FSOTClassBase*>& classes)
 {
 	// get the timestamp of when this started
 	std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
@@ -261,35 +291,29 @@ void GeneratePoints(int numPoints, int batchSize, int numIterations, const char*
 			);
 
 			// update batchDirections
+			std::uniform_real_distribution<float> distJitter(0.0f, 1.0f);
 			float pointCountScalingFactor = float(batchData.projections.size()) / float(numPoints);
 			for (size_t i = 0; i < batchData.sorted.size(); ++i)
 			{
 				float projection = batchData.projections[batchData.sorted[i]];
-				float projectionTarget = FSOTClass.ICDF((float(i) + 0.5f) / float(batchData.sorted.size()), direction);
 
-				float s = projectionTarget - projection;
+				float jitter = 0.5f;
+				if (stratifyLine)
+					jitter = distJitter(rng);
+				float projectionTarget = FSOTClass.ICDF((float(i) + jitter) / float(batchData.sorted.size()), direction);
 
-				int lastIndex = std::max(int(i) - 1, 0);
-				int nextIndex = std::min(int(i) + 1, int(batchData.sorted.size()) - 1);
+				float projectionDiff = projectionTarget - projection;
 
-				if (lastIndex == nextIndex)
-				{
-					int ijkl = 0;
-				}
-
-				float normalise_factor = 1.0f;
+				float gradientFactor = 1.0f;
 				if (useGradientScalingFactor)
 				{
-					normalise_factor = (FSOTClass.ICDF((float(nextIndex)) / float(batchData.sorted.size()), direction) - FSOTClass.ICDF((float(lastIndex)) / float(batchData.sorted.size()), direction)) / float(nextIndex - lastIndex);
-					normalise_factor *= float(batchData.projections.size());
+					int lastIndex = std::max(int(i) - 1, 0);
+					int nextIndex = std::min(int(i) + 1, int(batchData.sorted.size()) - 1);
+					gradientFactor = (FSOTClass.ICDF((float(nextIndex)) / float(batchData.sorted.size()), direction) - FSOTClass.ICDF((float(lastIndex)) / float(batchData.sorted.size()), direction)) / float(nextIndex - lastIndex);
+					gradientFactor *= float(batchData.projections.size());
 				}
 
-				float delta = pointCountScalingFactor * s / normalise_factor;
-
-				if (isnan(delta) || isinf(delta))
-				{
-					int ijkl = 0;
-				}
+				float delta = pointCountScalingFactor * projectionDiff / gradientFactor;
 
 				batchData.batchDirections[batchData.sorted[i]].x = direction.x * delta;
 				batchData.batchDirections[batchData.sorted[i]].y = direction.y * delta;
@@ -345,11 +369,25 @@ int main(int argc, char** argv)
 {
 	_mkdir("out");
 
+	// 1) Show the benefit of the gradient scaling fix
+	// 2) Compare stratifying the line vs not
 	{
-		FSOTClass_UniformSquare a;
+		FSOTClass<ICDF_UniformSquare, Filter_All> a;
 
-		GeneratePoints(1000, 64, 1000, "out/old", 10, false, { &a });
-		GeneratePoints(1000, 64, 1000, "out/new", 10, true, { &a });
+		// 1) Show the benefit of the gradient scaling fix
+		GeneratePoints(1000, 64, 1000, "out/GradFixNoStratifyNo", 1, false, false, { &a });
+		GeneratePoints(1000, 64, 1000, "out/GradFixYesStratifyNo", 1, true, false, { &a });
+
+		// 2) Compare stratifying the line vs not
+		GeneratePoints(1000, 64, 1000, "out/GradFixYesStratifyYes", 1, true, true, { &a });
+	}
+
+	// Multiclass
+	{
+		// TODO: separate ICDF from membership function, make a templated object take one of each.
+
+		//FSOTClass_UniformSquare a;
+		//FSOTClass_UniformSquare b;
 	}
 
 	return 0;
@@ -366,24 +404,19 @@ FSOT PAPER NOTES:
 * they make random points in space and project (not jitter, random!), instead of doing equal area points on the line. getInverseRadonNCube()
 
 BLOG:
-* first, compare blue noise points in square here vs last method. (maybe turn off the features in this one?)
+* first, compare GradFixNo to GradFixYes, showing how it improves that "overconvergence" thing. should have a better DFT than not letting it go to convergence (compare the 3 point sets, and DFTs)
+* Note that you are making the target be the center of each bucket, put through the ICDF, but they are stratifying. Compare the 2, see if there's a difference. note that not timothy lottes mentioned that too, after the last post.
 
 TODO:
-* their adjustment has a multiplication by 2
-* get the csv output working again. and whatever other progress reporting you want
-! you need to figure out what the gradient scaling is all about. it improves quality, fixes that "overconvergence" thing.
- * there are 2 scaling factors and the code may not match the paper in labels.
- * Code says gradient scaling is the number of points in the subclass, divided by the total number of points. This is multiplied into the adjustment.
- * Code says other scaling is the next (+1) location minus the last (-1) location divided by 2. Multiplied by number of points in subclass. The adjustment is divided by this amount.
- * Paper says that gradient scaling is the average bin length divided by the current bin length. Seems to disagree with code for naming!
-* omp across batches
+* profiling seems to say that GetRNG is a hot spot. maybe generate all RNG in advance?
+* could try showing DFTs that are the average of several realizations. may help show if stratification is good or not?
+* clean up generate points function
+* you need to be able to explain the gradient scaling for your blog post. why does it improve things?
 * point sets, and textures
 * progressive point set.
-* toroidally progressive point set (secret for now? JCGT)
-* write out csv of convergence, then can graph it
+* toroidally progressive point set (secret for now? JCGT?)
 ? what does a continuous membership even mean? maybe show 1 class with a box membership function vs a smooth membership function.
  * with fewer points (higher Z value) in continuous, those points get spread out more. weird.
-* retest jittering projections or not?
 ? how do they support toroidal distance for their points?
 * profile again
 
