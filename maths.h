@@ -7,7 +7,8 @@ static const float c_goldenRatioConjugate = 0.61803398875f;  // 1 over phi, whic
 
 struct float2
 {
-	float x, y;
+	float x = 0.0f;
+	float y = 0.0f;
 };
 
 inline float Dot(const float2& a, const float2& b)
