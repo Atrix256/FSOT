@@ -12,7 +12,7 @@ fileNames = glob.glob("out/*.png")
 # Make DFTs of all images
 for fileName in fileNames:
 
-    loadedImage = Image.open(fileName)
+    loadedImage = Image.open(fileName).convert('L')
     im = np.array(loadedImage, dtype=float) / 255.0
     if len(im.shape) == 3:
         print(fileName + " (Skipped for DFT)")

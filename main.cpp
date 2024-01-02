@@ -9,6 +9,8 @@ static const bool c_writePointSetTxt = false;
 
 static const bool c_drawNonGaussImage = true;
 
+static const bool c_drawStartingState = false;
+
 static const bool c_drawGaussImage = false;
 static const int c_pointImageGaussSize = 512;
 static const float c_pointImageGaussBlobSigma = 1.5f;
@@ -43,7 +45,7 @@ class FSOTClassBase
 {
 public:
 	virtual float ICDF(float y, const float2& direction) const = 0;
-	virtual void ProjectPoints(const std::vector<float2>& points, float subclassZ, const float2& direction, std::vector<float>& projections) const = 0;
+	virtual void Filter(const std::vector<float2>& points, float subClassZ, std::vector<int>& memberPoints) const = 0;
 };
 
 template <typename TICDF, typename TFilter>
@@ -54,9 +56,9 @@ class FSOTClass : public FSOTClassBase, public TICDF, public TFilter
 		return TICDF::ICDF(y, direction);
 	}
 
-	void ProjectPoints(const std::vector<float2>& points, float subclassZ, const float2& direction, std::vector<float>& projections) const override final
+	void Filter(const std::vector<float2>& points, float subClassZ, std::vector<int>& memberPoints) const override final
 	{
-		return TFilter::ProjectPoints(points, subclassZ, direction, projections);
+		return TFilter::Filter(points, subClassZ, memberPoints);
 	}
 };
 
@@ -79,12 +81,27 @@ public:
 class Filter_All
 {
 public:
-	void ProjectPoints(const std::vector<float2>& points, float subclassZ, const float2& direction, std::vector<float>& projections) const
+	void Filter(const std::vector<float2>& points, float subClassZ, std::vector<int>& memberPoints) const
 	{
-		// project all the points
-		projections.resize(points.size());
-		for (size_t i = 0; i < points.size(); ++i)
-			projections[i] = Dot(direction, points[i]);
+		// All points
+		memberPoints.resize(points.size());
+		for (int i = 0; i < (int)points.size(); ++i)
+			memberPoints[i] = i;
+	}
+};
+
+template <float THE_MIN, float THE_MAX>
+class Filter_Range
+{
+public:
+	void Filter(const std::vector<float2>& points, float subClassZ, std::vector<int>& memberPoints) const
+	{
+		int indexMin = std::max(int(THE_MIN * float(points.size())), 0);
+		int indexMax = std::min(int(THE_MAX * float(points.size())), int(points.size()));
+
+		memberPoints.resize(indexMax - indexMin);
+		for (int i = indexMin; i < indexMax; ++i)
+			memberPoints[i - indexMin] = i;
 	}
 };
 
@@ -144,9 +161,10 @@ void SavePointSet(const std::vector<float2>& points, const char* baseFileName, i
 	}
 
 	// Draw an image of the points
+	if (c_drawNonGaussImage || c_drawGaussImage)
 	{
-		std::vector<unsigned char> pixels(c_pointImageSize * c_pointImageSize, 255);
-		std::vector<unsigned char> pixelsGauss(c_pointImageGaussSize * c_pointImageGaussSize, 255);
+		std::vector<unsigned char> pixels(c_pointImageSize * c_pointImageSize * 3, 255);
+		std::vector<unsigned char> pixelsGauss(c_pointImageGaussSize * c_pointImageGaussSize * 3, 255);
 
 		for (size_t index = 0; index < points.size(); ++index)
 		{
@@ -154,15 +172,17 @@ void SavePointSet(const std::vector<float2>& points, const char* baseFileName, i
 			{
 				int x = (int)Clamp((points[index].x * 0.5f + 0.5f) * float(c_pointImageSize - 1), 0.0f, float(c_pointImageSize - 1));
 				int y = (int)Clamp((points[index].y * 0.5f + 0.5f) * float(c_pointImageSize - 1), 0.0f, float(c_pointImageSize - 1));
-				pixels[y * c_pointImageSize + x] = 0;
+				pixels[(y * c_pointImageSize + x) * 3 + 0] = 0;
+				pixels[(y * c_pointImageSize + x) * 3 + 1] = 0;
+				pixels[(y * c_pointImageSize + x) * 3 + 2] = 0;
 			}
 
 			if (c_drawGaussImage)
 			{
-				unsigned char color[] = { 0 };
+				unsigned char color[] = { 0, 0, 0 };
 				int x = (int)Clamp((points[index].x * 0.5f + 0.5f) * float(c_pointImageGaussSize - 1), 0.0f, float(c_pointImageGaussSize - 1));
 				int y = (int)Clamp((points[index].y * 0.5f + 0.5f) * float(c_pointImageGaussSize - 1), 0.0f, float(c_pointImageGaussSize - 1));
-				PlotGaussian<1>(pixelsGauss, c_pointImageGaussSize, c_pointImageGaussSize, x, y, c_pointImageGaussBlobSigma, color);
+				PlotGaussian<3>(pixelsGauss, c_pointImageGaussSize, c_pointImageGaussSize, x, y, c_pointImageGaussBlobSigma, color);
 			}
 		}
 
@@ -170,14 +190,14 @@ void SavePointSet(const std::vector<float2>& points, const char* baseFileName, i
 		{
 			char fileName[1024];
 			sprintf_s(fileName, "%s_%i_%i.png", baseFileName, index, total);
-			stbi_write_png(fileName, c_pointImageSize, c_pointImageSize, 1, pixels.data(), 0);
+			stbi_write_png(fileName, c_pointImageSize, c_pointImageSize, 3, pixels.data(), 0);
 		}
 
 		if (c_drawGaussImage)
 		{
 			char fileName[1024];
 			sprintf_s(fileName, "%s_%i_%i.gauss.png", baseFileName, index, total);
-			stbi_write_png(fileName, c_pointImageGaussSize, c_pointImageGaussSize, 1, pixelsGauss.data(), 0);
+			stbi_write_png(fileName, c_pointImageGaussSize, c_pointImageGaussSize, 3, pixelsGauss.data(), 0);
 		}
 	}
 }
@@ -233,7 +253,7 @@ void GeneratePoints(int numPoints, int batchSize, int numIterations, const char*
 	for (int iterationIndex = 0; iterationIndex < numIterations; ++iterationIndex)
 	{
 		// Write out progress
-		if (numProgressImages > 0)
+		if (numProgressImages > 0 && c_drawStartingState)
 		{
 			int progressInterval = numIterations / numProgressImages;
 			if (iterationIndex % progressInterval == 0)
@@ -270,19 +290,20 @@ void GeneratePoints(int numPoints, int batchSize, int numIterations, const char*
 			const FSOTClassBase& FSOTClass = *classes[selectedClass];
 
 			// Select a floating point value [0,1] for sub class selection
-			float subclassZ = 0.0f;
+			float subClassZ = 0.0f;
 			{
 				std::uniform_real<float> dist(0.0f, 1.0f);
-				subclassZ = dist(rng);
+				subClassZ = dist(rng);
 			}
 
+			// Filter the points so that batchData.sorted contains the point indices that are members
+			FSOTClass.Filter(points, subClassZ, batchData.sorted);
+
 			// Project the points
-			FSOTClass.ProjectPoints(points, subclassZ, direction, batchData.projections);
+			for (int i : batchData.sorted)
+				batchData.projections[i] = Dot(direction, points[i]);
 
 			// sort the projections
-			batchData.sorted.resize(batchData.projections.size());
-			for (int i = 0; i < (int)batchData.sorted.size(); ++i)
-				batchData.sorted[i] = i;
 			std::sort(batchData.sorted.begin(), batchData.sorted.end(),
 				[&](uint32_t a, uint32_t b)
 				{
@@ -386,8 +407,13 @@ int main(int argc, char** argv)
 	{
 		// TODO: separate ICDF from membership function, make a templated object take one of each.
 
-		//FSOTClass_UniformSquare a;
-		//FSOTClass_UniformSquare b;
+		FSOTClass<ICDF_UniformSquare, Filter_Range<0.0f, 0.5f>> firstHalf;
+		FSOTClass<ICDF_UniformSquare, Filter_Range<0.5f, 1.0f>> secondHalf;
+		FSOTClass<ICDF_UniformSquare, Filter_All> all;
+
+		GeneratePoints(1000, 64, 1000, "out/multiclass", 1, true, false, { &firstHalf, &secondHalf, &all });
+
+		// TODO: how to make it draw each class and class combination?
 	}
 
 	return 0;
@@ -408,6 +434,7 @@ BLOG:
 * Note that you are making the target be the center of each bucket, put through the ICDF, but they are stratifying. Compare the 2, see if there's a difference. note that not timothy lottes mentioned that too, after the last post.
 
 TODO:
+* your multiclass noise has a not great combined frequency, is that correct? what about each class?
 * profiling seems to say that GetRNG is a hot spot. maybe generate all RNG in advance?
 * could try showing DFTs that are the average of several realizations. may help show if stratification is good or not?
 * clean up generate points function
