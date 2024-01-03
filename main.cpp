@@ -11,7 +11,7 @@ static const bool c_drawNonGaussImage = true;
 
 static const bool c_drawStartingState = false;
 
-static const bool c_drawGaussImage = false;
+static const bool c_drawGaussImage = true;
 static const int c_pointImageGaussSize = 512;
 static const float c_pointImageGaussBlobSigma = 1.5f;
 
@@ -105,6 +105,80 @@ public:
 	}
 };
 
+class PointColoringObjectBase
+{
+public:
+	virtual int NumSets() const = 0;
+	virtual std::vector<float2> GetSet(const std::vector<float2>& points, int setIndex) const = 0;
+	virtual void GetSetColor(int setIndex, unsigned char& R, unsigned char& G, unsigned char& B) const = 0;
+	virtual void GetBackgroundColor(unsigned char& R, unsigned char& G, unsigned char& B) const = 0;
+};
+
+class PointColoringObject_OneSetBlack : public PointColoringObjectBase
+{
+public:
+	int NumSets() const override final
+	{
+		return 1;
+	}
+
+	std::vector<float2> GetSet(const std::vector<float2>& points, int setIndex) const override final
+	{
+		std::vector<float2> ret(points.size());
+		ret = points;
+		return ret;
+	}
+
+	void GetSetColor(int setIndex, unsigned char& R, unsigned char& G, unsigned char& B) const override final
+	{
+		R = 0;
+		G = 0;
+		B = 0;
+	}
+
+	void GetBackgroundColor(unsigned char& R, unsigned char& G, unsigned char& B) const override final
+	{
+		R = 255;
+		G = 255;
+		B = 255;
+	}
+};
+
+class PointColoringObject_HalfRedHalfBlue: public PointColoringObjectBase
+{
+public:
+	int NumSets() const override final
+	{
+		return 2;
+	}
+
+	std::vector<float2> GetSet(const std::vector<float2>& points, int setIndex) const override final
+	{
+		int start = (setIndex == 0) ? 0 : int(points.size()) / 2;
+		int end = (setIndex == 0) ? int(points.size()) / 2 : int(points.size());
+
+		std::vector<float2> ret(end - start);
+		for (int i = start; i < end; ++i)
+			ret[i - start] = points[i];
+
+		return ret;
+	}
+
+	void GetSetColor(int setIndex, unsigned char& R, unsigned char& G, unsigned char& B) const override final
+	{
+		R = (setIndex == 0) ? 255 : 0;
+		G = 0;
+		B = (setIndex == 1) ? 255 : 0;
+	}
+
+	void GetBackgroundColor(unsigned char& R, unsigned char& G, unsigned char& B) const override final
+	{
+		R = 0;
+		G = 0;
+		B = 0;
+	}
+};
+
 template <int NumChannels>
 void PlotGaussian(std::vector<unsigned char>& image, int width, int height, int x, int y, float sigma, unsigned char color[NumChannels])
 {
@@ -140,20 +214,35 @@ void PlotGaussian(std::vector<unsigned char>& image, int width, int height, int 
 	}
 }
 
-void SavePointSet(const std::vector<float2>& points, const char* baseFileName, int index, int total)
+void SavePointSet(const std::vector<float2>& points, const char* baseFileName, int progressIndex, int progressTotal, const PointColoringObjectBase& pointColoringObject)
 {
+	const int numSets = pointColoringObject.NumSets();
+
 	// Write out points in text
 	if (c_writePointSetTxt)
 	{
 		char fileName[1024];
-		sprintf_s(fileName, "%s_%i_%i.txt", baseFileName, index, total);
+		sprintf_s(fileName, "%s_%i_%i.txt", baseFileName, progressIndex, progressTotal);
 		FILE* file = nullptr;
 		fopen_s(&file, fileName, "wb");
 
-		fprintf(file, "float points[][2] =\n{\n");
+		if (numSets > 1)
+		{
+			fprintf(file, "float points[][3] =\n{\n");
 
-		for (size_t index = 0; index < points.size(); ++index)
-			fprintf(file, "    { %ff, %ff },\n", points[index].x, points[index].y);
+			for (int setIndex = 0; setIndex < numSets; ++setIndex)
+			{
+				fprintf(file, "\n    // Set %i\n", setIndex);
+				for (const float2& p : pointColoringObject.GetSet(points, setIndex))
+					fprintf(file, "    { %ff, %ff, %ff },\n", p.x, p.y, float(setIndex));
+			}
+		}
+		else
+		{
+			fprintf(file, "float points[][2] =\n{\n");
+			for (size_t index = 0; index < points.size(); ++index)
+				fprintf(file, "    { %ff, %ff },\n", points[index].x, points[index].y);
+		}
 
 		fprintf(file, "};\n");
 
@@ -163,46 +252,79 @@ void SavePointSet(const std::vector<float2>& points, const char* baseFileName, i
 	// Draw an image of the points
 	if (c_drawNonGaussImage || c_drawGaussImage)
 	{
-		std::vector<unsigned char> pixels(c_pointImageSize * c_pointImageSize * 3, 255);
+		unsigned char bg[3];
+		pointColoringObject.GetBackgroundColor(bg[0], bg[1], bg[2]);
+
+		std::vector<unsigned char> pixels(c_pointImageSize * c_pointImageSize * 3);
 		std::vector<unsigned char> pixelsGauss(c_pointImageGaussSize * c_pointImageGaussSize * 3, 255);
 
-		for (size_t index = 0; index < points.size(); ++index)
+		int classPermutations = 1 << numSets;
+
+		for (int permutationIndex = 1; permutationIndex < classPermutations; ++permutationIndex)
 		{
+			for (size_t index = 0; index < c_pointImageSize * c_pointImageSize; ++index)
+				memcpy(&pixels[index * 3], bg, 3);
+
+			for (size_t index = 0; index < c_pointImageGaussSize * c_pointImageGaussSize; ++index)
+				memcpy(&pixelsGauss[index * 3], bg, 3);
+
+			for (int setIndex = 0; setIndex < numSets; ++setIndex)
+			{
+				if ((permutationIndex & (1 << setIndex)) == 0)
+					continue;
+
+				unsigned char fg[3];
+				pointColoringObject.GetSetColor(setIndex, fg[0], fg[1], fg[2]);
+
+				for (const float2& p : pointColoringObject.GetSet(points, setIndex))
+				{
+					if (c_drawNonGaussImage)
+					{
+						int x = (int)Clamp((p.x * 0.5f + 0.5f) * float(c_pointImageSize - 1), 0.0f, float(c_pointImageSize - 1));
+						int y = (int)Clamp((p.y * 0.5f + 0.5f) * float(c_pointImageSize - 1), 0.0f, float(c_pointImageSize - 1));
+						memcpy(&pixels[(y * c_pointImageSize + x) * 3], fg, 3);
+					}
+
+					if (c_drawGaussImage)
+					{
+						int x = (int)Clamp((p.x * 0.5f + 0.5f) * float(c_pointImageGaussSize - 1), 0.0f, float(c_pointImageGaussSize - 1));
+						int y = (int)Clamp((p.y * 0.5f + 0.5f) * float(c_pointImageGaussSize - 1), 0.0f, float(c_pointImageGaussSize - 1));
+						PlotGaussian<3>(pixelsGauss, c_pointImageGaussSize, c_pointImageGaussSize, x, y, c_pointImageGaussBlobSigma, fg);
+					}
+				}
+			}
+
+			char permutationString[64] = { 0 };
+			if (numSets > 1)
+			{
+				strcat(permutationString, ".");
+				for (int setIndex = 0; setIndex < numSets; ++setIndex)
+				{
+					if ((permutationIndex & (1 << setIndex)) == 0)
+						strcat(permutationString, "F");
+					else
+						strcat(permutationString, "T");
+				}
+			}
+
 			if (c_drawNonGaussImage)
 			{
-				int x = (int)Clamp((points[index].x * 0.5f + 0.5f) * float(c_pointImageSize - 1), 0.0f, float(c_pointImageSize - 1));
-				int y = (int)Clamp((points[index].y * 0.5f + 0.5f) * float(c_pointImageSize - 1), 0.0f, float(c_pointImageSize - 1));
-				pixels[(y * c_pointImageSize + x) * 3 + 0] = 0;
-				pixels[(y * c_pointImageSize + x) * 3 + 1] = 0;
-				pixels[(y * c_pointImageSize + x) * 3 + 2] = 0;
+				char fileName[1024];
+				sprintf_s(fileName, "%s_%i_%i%s.png", baseFileName, progressIndex, progressTotal, permutationString);
+				stbi_write_png(fileName, c_pointImageSize, c_pointImageSize, 3, pixels.data(), 0);
 			}
 
 			if (c_drawGaussImage)
 			{
-				unsigned char color[] = { 0, 0, 0 };
-				int x = (int)Clamp((points[index].x * 0.5f + 0.5f) * float(c_pointImageGaussSize - 1), 0.0f, float(c_pointImageGaussSize - 1));
-				int y = (int)Clamp((points[index].y * 0.5f + 0.5f) * float(c_pointImageGaussSize - 1), 0.0f, float(c_pointImageGaussSize - 1));
-				PlotGaussian<3>(pixelsGauss, c_pointImageGaussSize, c_pointImageGaussSize, x, y, c_pointImageGaussBlobSigma, color);
+				char fileName[1024];
+				sprintf_s(fileName, "%s_%i_%i%s.gauss.png", baseFileName, progressIndex, progressTotal, permutationString);
+				stbi_write_png(fileName, c_pointImageGaussSize, c_pointImageGaussSize, 3, pixelsGauss.data(), 0);
 			}
-		}
-
-		if (c_drawNonGaussImage)
-		{
-			char fileName[1024];
-			sprintf_s(fileName, "%s_%i_%i.png", baseFileName, index, total);
-			stbi_write_png(fileName, c_pointImageSize, c_pointImageSize, 3, pixels.data(), 0);
-		}
-
-		if (c_drawGaussImage)
-		{
-			char fileName[1024];
-			sprintf_s(fileName, "%s_%i_%i.gauss.png", baseFileName, index, total);
-			stbi_write_png(fileName, c_pointImageGaussSize, c_pointImageGaussSize, 3, pixelsGauss.data(), 0);
 		}
 	}
 }
 
-void GeneratePoints(int numPoints, int batchSize, int numIterations, const char* baseFileName, int numProgressImages, bool useGradientScalingFactor, bool stratifyLine, const std::vector<const FSOTClassBase*>& classes)
+void GeneratePoints(int numPoints, int batchSize, int numIterations, const char* baseFileName, int numProgressImages, bool useGradientScalingFactor, bool stratifyLine, const std::vector<const FSOTClassBase*>& classes, const PointColoringObjectBase& pointColoringObject)
 {
 	// get the timestamp of when this started
 	std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
@@ -257,7 +379,7 @@ void GeneratePoints(int numPoints, int batchSize, int numIterations, const char*
 		{
 			int progressInterval = numIterations / numProgressImages;
 			if (iterationIndex % progressInterval == 0)
-				SavePointSet(points, baseFileName, iterationIndex / progressInterval, numProgressImages);
+				SavePointSet(points, baseFileName, iterationIndex / progressInterval, numProgressImages, pointColoringObject);
 		}
 
 		// Do the batches in parallel
@@ -379,7 +501,7 @@ void GeneratePoints(int numPoints, int batchSize, int numIterations, const char*
 	fclose(file);
 
 	// Write out the final results
-	SavePointSet(points, baseFileName, numProgressImages, numProgressImages);
+	SavePointSet(points, baseFileName, numProgressImages, numProgressImages, pointColoringObject);
 
 	// report how long this took
 	float elpasedSeconds = std::chrono::duration_cast<std::chrono::duration<float>>(std::chrono::high_resolution_clock::now() - start).count();
@@ -394,26 +516,28 @@ int main(int argc, char** argv)
 	// 2) Compare stratifying the line vs not
 	{
 		FSOTClass<ICDF_UniformSquare, Filter_All> a;
+		PointColoringObject_OneSetBlack pointColoringObject;
 
 		// 1) Show the benefit of the gradient scaling fix
-		GeneratePoints(1000, 64, 1000, "out/GradFixNoStratifyNo", 1, false, false, { &a });
-		GeneratePoints(1000, 64, 1000, "out/GradFixYesStratifyNo", 1, true, false, { &a });
+		GeneratePoints(1000, 64, 1000, "out/GradFixNoStratifyNo", 1, false, false, { &a }, pointColoringObject);
+		GeneratePoints(1000, 64, 1000, "out/GradFixYesStratifyNo", 1, true, false, { &a }, pointColoringObject);
 
 		// 2) Compare stratifying the line vs not
-		GeneratePoints(1000, 64, 1000, "out/GradFixYesStratifyYes", 1, true, true, { &a });
+		GeneratePoints(1000, 64, 1000, "out/GradFixYesStratifyYes", 1, true, true, { &a }, pointColoringObject);
 	}
 
 	// Multiclass
 	{
 		// TODO: separate ICDF from membership function, make a templated object take one of each.
+		// TODO: just make it easier to make this stuff
+
+		PointColoringObject_HalfRedHalfBlue pointColoringObject;
 
 		FSOTClass<ICDF_UniformSquare, Filter_Range<0.0f, 0.5f>> firstHalf;
 		FSOTClass<ICDF_UniformSquare, Filter_Range<0.5f, 1.0f>> secondHalf;
 		FSOTClass<ICDF_UniformSquare, Filter_All> all;
 
-		GeneratePoints(1000, 64, 1000, "out/multiclass", 1, true, false, { &firstHalf, &secondHalf, &all });
-
-		// TODO: how to make it draw each class and class combination?
+		GeneratePoints(1000, 64, 10000, "out/multiclass", 1, true, false, { &firstHalf, &secondHalf, &all }, pointColoringObject);
 	}
 
 	return 0;
