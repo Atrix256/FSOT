@@ -759,15 +759,22 @@ int main(int argc, char** argv)
 	}
 
 	// Projective
-	if (false)
+	if (true)
 	{
-		FSOTClass<ICDF_UniformXAxis, Filter_All> a;
-		FSOTClass<ICDF_UniformYAxis, Filter_All> b;
-		FSOTClass<ICDF_UniformSquare, Filter_All> c(4.0f);
+		static const int c_numPoints = 1000;
+
+		static const float c_MaxRadius1D = MaxPackedSphereRadiusDimension1(c_numPoints);
+		static const float c_MaxRadius2D = MaxPackedSphereRadiusDimension2(c_numPoints);
+
+		static const float c_totalWeight = c_MaxRadius1D + c_MaxRadius1D + c_MaxRadius2D;
+
+		FSOTClass<ICDF_UniformXAxis, Filter_All> a(c_MaxRadius1D / c_totalWeight);
+		FSOTClass<ICDF_UniformYAxis, Filter_All> b(c_MaxRadius1D / c_totalWeight);
+		FSOTClass<ICDF_UniformSquare, Filter_All> c(c_MaxRadius2D / c_totalWeight);
 
 		PointColoringObject_OneSetBlack pointColoringObject;
 
-		GeneratePoints(1000, 64, 10000, "out/Projective", 5, true, true, false, { &a, &b, &c }, pointColoringObject);
+		GeneratePoints(c_numPoints, 64, 10000, "out/Projective", 5, true, true, false, { &a, &b, &c }, pointColoringObject);
 	}
 
 	return 0;
@@ -787,9 +794,12 @@ BLOG:
 * show progressive
 * talk about classes and subclasses, and selection of them
  * continuous subclasses -> the points move slower by being part of a smaller group (m/n) but they also move as part of the larger subset. BUT they move to a different location. is that correct?
+* show projective blue noise
+ ! projective blue noise paper: https://resources.mpi-inf.mpg.de/ProjectiveBlueNoise/ProjectiveBlueNoise.pdf
+ * talk about how you balanced the weights, like the paper says to.
 
 TODO:
-* check that the Z cutoff thing doesn't just filter what points get MOVED, since that would give them the same target, just move them there m/n more slowly.
+* need to show quality of projective points in 1D
 * toroidally progressive point set (secret for now? JCGT?)
 * noise textures
 * your progressive point st isn't the highest quality. why not? They use adam (see slicedOptimalTransportBatchCube_progressive()), maybe that is why? but their code doesn't really even do progressive as far as i can tell...

@@ -80,3 +80,25 @@ inline bool IsPowerOf2(int n)
 {
 	return (n & (n - 1)) == 0;
 }
+
+// From section 3.1 of "Projective Blue-Noise Sampling"
+// https://resources.mpi-inf.mpg.de/ProjectiveBlueNoise/ProjectiveBlueNoise.pdf
+inline float MaxPackedSphereRadiusDimension1(int n)
+{
+	return 1.0f / (2.0f * float(n));
+}
+
+inline float MaxPackedSphereRadiusDimension2(int n)
+{
+	return std::sqrt(1.0f / (2.0f * std::sqrt(3.0f) * float(n)));
+}
+
+inline float MaxPackedSphereRadiusDimension3(int n)
+{
+	return std::pow(1.0f / (4.0f * std::sqrt(2.0f) * float(n)), 1.0f / 3.0f);
+}
+
+inline float MaxPackedSphereRadiusDimension4(int n)
+{
+	return std::pow(1.0f / (8.0f * float(n)), 1.0f / 4.0f);
+}
