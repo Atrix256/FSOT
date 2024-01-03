@@ -558,12 +558,10 @@ BLOG:
 * Note that you are making the target be the center of each bucket, put through the ICDF, but they are stratifying. Compare the 2, see if there's a difference. note that not timothy lottes mentioned that too, after the last post.
 
 TODO:
-* your multiclass noise has a not great combined frequency, is that correct? what about each class?
-* profiling seems to say that GetRNG is a hot spot. maybe generate all RNG in advance?
+* your multiclass noise has a not great combined frequency, is that correct? what about each class? The paper seems to have nice frequencies for multiclass, look at what they do
 * could try showing DFTs that are the average of several realizations. may help show if stratification is good or not?
-* clean up generate points function
 * you need to be able to explain the gradient scaling for your blog post. why does it improve things?
-* point sets, and textures
+* point sets, and noise textures
 * progressive point set.
 * toroidally progressive point set (secret for now? JCGT?)
 ? what does a continuous membership even mean? maybe show 1 class with a box membership function vs a smooth membership function.
