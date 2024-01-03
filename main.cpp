@@ -4,7 +4,8 @@
 #define DETERMINISTIC() true
 #define MULTITHREADED() true
 
-static const bool c_writePointSetTxt = false;
+static const bool c_writePointSetTxt = true;
+static const bool c_writePointSetCsv = true;
 
 static const bool c_drawStartingState = false;
 
@@ -399,6 +400,25 @@ void SavePointSet(const std::vector<float2>& points, const char* baseFileName, i
 		fclose(file);
 	}
 
+	// write out points in csv
+	if (c_writePointSetCsv)
+	{
+		char fileName[1024];
+		sprintf_s(fileName, "%s_%i_%i.csv", baseFileName, progressIndex, progressTotal);
+		FILE* file = nullptr;
+		fopen_s(&file, fileName, "wb");
+
+		fprintf(file, "\"X\",\"Y\",\"Class\"\n");
+
+		for (int setIndex = 0; setIndex < numSets; ++setIndex)
+		{
+			for (const float2& p : pointColoringObject.GetSet(points, setIndex))
+				fprintf(file, "\"%f\",\"%f\",\"%i\"\n", p.x, p.y, setIndex);
+		}
+
+		fclose(file);
+	}
+
 	// Draw an image of the points
 	int imageCount = 0;
 	if (c_drawPointImage || c_drawGaussImage)
@@ -507,7 +527,7 @@ void GeneratePoints(int numPoints, int batchSize, int numIterations, const char*
 
 	FILE* file = nullptr;
 	char outputFileNameCSV[1024];
-	sprintf(outputFileNameCSV, "%s.csv", baseFileName);
+	sprintf(outputFileNameCSV, "%s.movement.csv", baseFileName);
 	fopen_s(&file, outputFileNameCSV, "wb");
 	fprintf(file, "\"Iteration\",\"Avg. Movement\"\n");
 
@@ -716,7 +736,7 @@ int main(int argc, char** argv)
 	// 1) Show the benefit of the gradient scaling fix
 	// 2) Compare stratifying the line vs not
 	// 3) Compare toroidal fixup vs not
-	if (false)
+	if (true)
 	{
 		FSOTClass<ICDF_UniformSquare, Filter_All> a;
 		PointColoringObject_OneSetBlack pointColoringObject;
@@ -733,7 +753,7 @@ int main(int argc, char** argv)
 	}
 
 	// Multiclass
-	if (false)
+	if (true)
 	{
 		PointColoringObject_HalfRedHalfBlue pointColoringObject;
 
@@ -746,7 +766,7 @@ int main(int argc, char** argv)
 	}
 
 	// Progressive vs Non progressive
-	if (false)
+	if (true)
 	{
 		FSOTClass<ICDF_UniformSquare, Filter_Progressive> a;
 		FSOTClass<ICDF_UniformSquare, Filter_All> b;
@@ -774,7 +794,7 @@ int main(int argc, char** argv)
 
 		PointColoringObject_OneSetBlack pointColoringObject;
 
-		GeneratePoints(c_numPoints, 64, 10000, "out/Projective", 5, true, true, false, { &a, &b, &c }, pointColoringObject);
+		GeneratePoints(c_numPoints, 64, 10000, "out/Projective", 1, true, true, false, { &a, &b, &c }, pointColoringObject);
 	}
 
 	return 0;
@@ -799,13 +819,13 @@ BLOG:
  * talk about how you balanced the weights, like the paper says to.
 
 TODO:
-* need to show quality of projective points in 1D
 * toroidally progressive point set (secret for now? JCGT?)
+ * and projective while toroidally progressives, after
 * noise textures
 * your progressive point st isn't the highest quality. why not? They use adam (see slicedOptimalTransportBatchCube_progressive()), maybe that is why? but their code doesn't really even do progressive as far as i can tell...
  * same with multiclass right?
  * could generate and look at their points and see if they are the same
- * perhaps same with projective noise. also not sure how to balance 1d axis vs 2d. maybe look at projective blue noise paper for proper weighting?
+ * perhaps same with projective noise. I don't know that you have the right weighting yet
 * could try showing DFTs that are the average of several realizations. may help show if stratification is good or not? do it as one off special work in that specialized python script we haven't pulled over
 * you need to be able to explain the gradient scaling for your blog post. why does it improve things?
 ? what does a continuous membership even mean? maybe show 1 class with a box membership function vs a smooth membership function.

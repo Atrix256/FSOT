@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import glob
+import os
 
 makeTiles = False
 
@@ -13,6 +14,8 @@ fileNames = glob.glob("out/*.png")
 for fileName in fileNames:
 
     print(fileName)
+
+    fileNameNoExtension = os.path.splitext(fileName)[0]
 
     # Load the image
     loadedImage = Image.open(fileName)
@@ -41,7 +44,7 @@ for fileName in fileNames:
             imOut = imOut
 
         # Write out DFT
-        outFileName = fileName + ".magnitude.png"
+        outFileName = fileNameNoExtension + ".magnitude.png"
         Image.fromarray((imOut*255.0).astype(np.uint8), mode="L").save(outFileName)
     
     # Tile image as 3x3
@@ -50,7 +53,7 @@ for fileName in fileNames:
         for i in range(3):
             for j in range(3):
                 imOut.paste(loadedImage, (i*loadedImage.size[0],j*loadedImage.size[1]))
-        imOut.save(fileName + ".3x3.png")
+        imOut.save(fileNameNoExtension + ".3x3.png")
     
     # Tile image as 11x11
     if makeTiles:
@@ -58,13 +61,15 @@ for fileName in fileNames:
         for i in range(11):
             for j in range(11):
                 imOut.paste(loadedImage, (i*loadedImage.size[0],j*loadedImage.size[1]))
-        imOut.save(fileName + ".11x11.png")
+        imOut.save(fileNameNoExtension + ".11x11.png")
 
 
-fileNames = glob.glob("out/*.csv")
+fileNames = glob.glob("out/*.movement.csv")
 
 for fileName in fileNames:
     print(fileName)
+
+    fileNameNoExtension = os.path.splitext(fileName)[0]
 
     fig, ax = plt.subplots()
     df = pd.read_csv(fileName).drop(['Iteration'], axis=1)
@@ -77,4 +82,4 @@ for fileName in fileNames:
     fig.axes[0].set_yscale('log', base=2)
 
     fig.tight_layout()
-    fig.savefig(fileName + ".graph.png", bbox_inches='tight')
+    fig.savefig(fileNameNoExtension + ".graph.png", bbox_inches='tight')
