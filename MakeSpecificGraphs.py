@@ -47,8 +47,8 @@ for fileName in fileNames:
 
     # Graph the DFTs
 
-    #dftX = signal.resample(dftX, 100)
-    #dftY = signal.resample(dftY, 100)
+    dftX = signal.resample(dftX, 100)
+    dftY = signal.resample(dftY, 100)
     t = np.arange(0, 1, 1.0 / dftX.shape[0])
     
     fig = plt.figure()
