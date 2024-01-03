@@ -47,6 +47,7 @@ public:
 	virtual float ICDF(float y, const float2& direction) const = 0;
 	virtual void Filter(const std::vector<float2>& points, float subClassZ, std::vector<int>& memberPoints) const = 0;
 	virtual float GetWeight() const = 0;
+	virtual float2 GetRandomDirection(std::mt19937& rng) const = 0;
 };
 
 template <typename TICDF, typename TFilter>
@@ -74,12 +75,29 @@ public:
 		return m_weight;
 	}
 
+	virtual float2 GetRandomDirection(std::mt19937& rng) const override final
+	{
+		float2 direction;
+		if (!TICDF::OverrideDirection(direction))
+		{
+			std::normal_distribution<float> distNormal(0.0f, 1.0f);
+			direction.x = distNormal(rng);
+			direction.y = distNormal(rng);
+		}
+		return Normalize(direction);
+	}
+
 	float m_weight = 1.0f;
 };
 
 class ICDF_UniformSquare
 {
 public:
+	bool OverrideDirection(float2& direction) const
+	{
+		return false;
+	}
+
 	float ICDF(float y, const float2& direction) const
 	{
 		// Convert y: square is in [-0.5, 0.5], but y is in [0, 1].
@@ -87,6 +105,52 @@ public:
 
 		// Evaluate ICDF
 		float x = Square::InverseCDF(y, direction);
+
+		// The CDF is in [-0.5, 0.5], but we want the points to be in [-1,1]
+		return x * 2.0f;
+	}
+};
+
+class ICDF_UniformXAxis
+{
+public:
+	bool OverrideDirection(float2& direction) const
+	{
+		direction.x = 1.0f;
+		direction.y = 0.0f;
+		return true;
+	}
+
+	float ICDF(float y, const float2& direction) const
+	{
+		// Convert y: square is in [-0.5, 0.5], but y is in [0, 1].
+		y = y - 0.5f;
+
+		// Evaluate ICDF
+		float x = y;
+
+		// The CDF is in [-0.5, 0.5], but we want the points to be in [-1,1]
+		return x * 2.0f;
+	}
+};
+
+class ICDF_UniformYAxis
+{
+public:
+	bool OverrideDirection(float2& direction) const
+	{
+		direction.x = 0.0f;
+		direction.y = 1.0f;
+		return true;
+	}
+
+	float ICDF(float y, const float2& direction) const
+	{
+		// Convert y: square is in [-0.5, 0.5], but y is in [0, 1].
+		y = y - 0.5f;
+
+		// Evaluate ICDF
+		float x = y;
 
 		// The CDF is in [-0.5, 0.5], but we want the points to be in [-1,1]
 		return x * 2.0f;
@@ -485,11 +549,14 @@ void GeneratePoints(int numPoints, int batchSize, int numIterations, const char*
 	for (int iterationIndex = 0; iterationIndex < numIterations; ++iterationIndex)
 	{
 		// Write out progress
-		if (numProgressImages > 0 && c_drawStartingState)
+		if (numProgressImages > 0)
 		{
-			int progressInterval = numIterations / numProgressImages;
-			if (iterationIndex % progressInterval == 0)
-				SavePointSet(points, baseFileName, iterationIndex / progressInterval, numProgressImages, pointColoringObject);
+			if (iterationIndex > 0 || c_drawStartingState)
+			{
+				int progressInterval = numIterations / numProgressImages;
+				if (iterationIndex % progressInterval == 0)
+					SavePointSet(points, baseFileName, iterationIndex / progressInterval, numProgressImages, pointColoringObject);
+			}
 		}
 
 		// Do the batches in parallel
@@ -502,17 +569,7 @@ void GeneratePoints(int numPoints, int batchSize, int numIterations, const char*
 
 			std::mt19937 rng = GetRNG(iterationIndex * batchSize + batchIndex);
 
-			// generate a random projection direction
-			float2 direction;
-			{
-				std::normal_distribution<float> distNormal(0.0f, 1.0f);
-
-				direction.x = distNormal(rng);
-				direction.y = distNormal(rng);
-				direction = Normalize(direction);
-			}
-
-			// Select a class randomly by weight if there is more than 1
+			// Select a class randomly by weight
 			int selectedClass = 0;
 			if (classes.size() > 1)
 			{
@@ -540,12 +597,15 @@ void GeneratePoints(int numPoints, int batchSize, int numIterations, const char*
 				subClassZ = dist(rng);
 			}
 
-			// Filter the points so that batchData.sorted contains the point indices that are members
+			// Filter the points so that batchData.sorted contains the point indices that are members of the subclass
 			FSOTClass.Filter(points, subClassZ, batchData.sorted);
 
 			// if no points selected, don't do anything
 			if (batchData.sorted.size() == 0)
 				continue;
+
+			// generate a random projection direction
+			float2 direction = FSOTClass.GetRandomDirection(rng);
 
 			// Project the points
 			for (int i : batchData.sorted)
@@ -673,6 +733,7 @@ int main(int argc, char** argv)
 	}
 
 	// Multiclass
+	if (false)
 	{
 		PointColoringObject_HalfRedHalfBlue pointColoringObject;
 
@@ -697,6 +758,18 @@ int main(int argc, char** argv)
 		GeneratePoints(1024, 128, 4096, "out/ProgressiveNo", 1, true, false, false, { &b }, pointColoringObject);
 	}
 
+	// Projective
+	if (false)
+	{
+		FSOTClass<ICDF_UniformXAxis, Filter_All> a;
+		FSOTClass<ICDF_UniformYAxis, Filter_All> b;
+		FSOTClass<ICDF_UniformSquare, Filter_All> c(4.0f);
+
+		PointColoringObject_OneSetBlack pointColoringObject;
+
+		GeneratePoints(1000, 64, 10000, "out/Projective", 5, true, true, false, { &a, &b, &c }, pointColoringObject);
+	}
+
 	return 0;
 }
 
@@ -712,21 +785,24 @@ BLOG:
 * show multiclass
  * mention that you added a weighting to each class
 * show progressive
+* talk about classes and subclasses, and selection of them
+ * continuous subclasses -> the points move slower by being part of a smaller group (m/n) but they also move as part of the larger subset. BUT they move to a different location. is that correct?
 
 TODO:
-* projective point sets (and progressive / projective. and toroidally progressive / projective)
- * for projective may need to have the ICDF be able to define the projection direction (axis aligned!)
+* check that the Z cutoff thing doesn't just filter what points get MOVED, since that would give them the same target, just move them there m/n more slowly.
+* toroidally progressive point set (secret for now? JCGT?)
+* noise textures
 * your progressive point st isn't the highest quality. why not? They use adam (see slicedOptimalTransportBatchCube_progressive()), maybe that is why? but their code doesn't really even do progressive as far as i can tell...
  * same with multiclass right?
  * could generate and look at their points and see if they are the same
+ * perhaps same with projective noise. also not sure how to balance 1d axis vs 2d. maybe look at projective blue noise paper for proper weighting?
 * could try showing DFTs that are the average of several realizations. may help show if stratification is good or not? do it as one off special work in that specialized python script we haven't pulled over
 * you need to be able to explain the gradient scaling for your blog post. why does it improve things?
-* point sets, and noise textures
-* toroidally progressive point set (secret for now? JCGT?)
 ? what does a continuous membership even mean? maybe show 1 class with a box membership function vs a smooth membership function.
  * with fewer points (higher Z value) in continuous, those points get spread out more. weird.
 ? how do they support toroidal distance for their points? i did a toroidal fixup but that doesn't seem to be it?
 * profile again
+* clean up this code
 
 Toroidal Progressiveness
 * compare vs halton, and R2
