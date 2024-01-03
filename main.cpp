@@ -46,11 +46,19 @@ class FSOTClassBase
 public:
 	virtual float ICDF(float y, const float2& direction) const = 0;
 	virtual void Filter(const std::vector<float2>& points, float subClassZ, std::vector<int>& memberPoints) const = 0;
+	virtual float GetWeight() const = 0;
 };
 
 template <typename TICDF, typename TFilter>
 class FSOTClass : public FSOTClassBase, public TICDF, public TFilter
 {
+public:
+	FSOTClass(float weight = 1.0f)
+		: m_weight(weight)
+	{
+
+	}
+
 	float ICDF(float y, const float2& direction) const override final
 	{
 		return TICDF::ICDF(y, direction);
@@ -60,6 +68,13 @@ class FSOTClass : public FSOTClassBase, public TICDF, public TFilter
 	{
 		return TFilter::Filter(points, subClassZ, memberPoints);
 	}
+
+	float GetWeight() const override final
+	{
+		return m_weight;
+	}
+
+	float m_weight = 1.0f;
 };
 
 class ICDF_UniformSquare
@@ -497,12 +512,24 @@ void GeneratePoints(int numPoints, int batchSize, int numIterations, const char*
 				direction = Normalize(direction);
 			}
 
-			// Select a class randomly if there is more than 1
+			// Select a class randomly by weight if there is more than 1
 			int selectedClass = 0;
 			if (classes.size() > 1)
 			{
-				std::uniform_int_distribution<int> dist(0, (int)classes.size() - 1);
-				selectedClass = dist(rng);
+				float totalWeight = 0.0f;
+				for (const FSOTClassBase* fsotClass : classes)
+					totalWeight += fsotClass->GetWeight();
+
+				std::uniform_real<float> dist(0.0f, totalWeight);
+
+				float weight = dist(rng);
+
+				weight -= classes[0]->GetWeight();
+				while (weight > 0.0f && selectedClass < classes.size() - 1)
+				{
+					selectedClass++;
+					weight -= classes[selectedClass]->GetWeight();
+				}
 			}
 			const FSOTClassBase& FSOTClass = *classes[selectedClass];
 
@@ -651,10 +678,10 @@ int main(int argc, char** argv)
 
 		FSOTClass<ICDF_UniformSquare, Filter_Range<0.0f, 0.5f>> firstHalf;
 		FSOTClass<ICDF_UniformSquare, Filter_Range<0.5f, 1.0f>> secondHalf;
-		FSOTClass<ICDF_UniformSquare, Filter_All> all;
+		FSOTClass<ICDF_UniformSquare, Filter_All> all(2.0f);
 
 		// Same settings as official example from their github, including 50% chance to do the combined set
-		GeneratePoints(1024, 256, 4096, "out/Multiclass", 1, true, false, false, { &firstHalf, &secondHalf, &all, &all }, pointColoringObject);
+		GeneratePoints(1024, 256, 4096, "out/Multiclass", 1, true, false, false, { &firstHalf, &secondHalf, &all}, pointColoringObject);
 	}
 
 	// Progressive vs Non progressive
@@ -683,19 +710,18 @@ BLOG:
 * first, compare GradFixNo to GradFixYes, showing how it improves that "overconvergence" thing. should have a better DFT than not letting it go to convergence (compare the 3 point sets, and DFTs)
 * Note that you are making the target be the center of each bucket, put through the ICDF, but they are stratifying. Compare the 2, see if there's a difference. note that not timothy lottes mentioned that too, after the last post.
 * show multiclass
+ * mention that you added a weighting to each class
 * show progressive
 
 TODO:
-* could add a weight for each class, and do "weighted round robin" for selection or something? yeah do this
 * projective point sets (and progressive / projective. and toroidally progressive / projective)
  * for projective may need to have the ICDF be able to define the projection direction (axis aligned!)
 * your progressive point st isn't the highest quality. why not? They use adam (see slicedOptimalTransportBatchCube_progressive()), maybe that is why? but their code doesn't really even do progressive as far as i can tell...
  * same with multiclass right?
  * could generate and look at their points and see if they are the same
-* could try showing DFTs that are the average of several realizations. may help show if stratification is good or not?
+* could try showing DFTs that are the average of several realizations. may help show if stratification is good or not? do it as one off special work in that specialized python script we haven't pulled over
 * you need to be able to explain the gradient scaling for your blog post. why does it improve things?
 * point sets, and noise textures
-* progressive point set.
 * toroidally progressive point set (secret for now? JCGT?)
 ? what does a continuous membership even mean? maybe show 1 class with a box membership function vs a smooth membership function.
  * with fewer points (higher Z value) in continuous, those points get spread out more. weird.
