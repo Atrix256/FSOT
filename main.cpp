@@ -12,7 +12,7 @@ static const bool c_drawStartingState = false;
 static const bool c_drawPointImage = true;
 static const int c_pointImageSize = 256;
 
-static const bool c_drawGaussImage = false;
+static const bool c_drawGaussImage = true;
 static const int c_pointImageGaussSize = 512;
 static const float c_pointImageGaussBlobSigma = 1.5f;
 
@@ -786,13 +786,17 @@ int main(int argc, char** argv)
 		static const float c_MaxRadius1D = MaxPackedSphereRadiusDimension1(c_numPoints);
 		static const float c_MaxRadius2D = MaxPackedSphereRadiusDimension2(c_numPoints);
 
+		PointColoringObject_OneSetBlack pointColoringObject;
+
 		static const float c_totalWeight = c_MaxRadius1D + c_MaxRadius1D + c_MaxRadius2D;
 
 		FSOTClass<ICDF_UniformXAxis, Filter_All> a(c_MaxRadius1D / c_totalWeight);
 		FSOTClass<ICDF_UniformYAxis, Filter_All> b(c_MaxRadius1D / c_totalWeight);
 		FSOTClass<ICDF_UniformSquare, Filter_All> c(c_MaxRadius2D / c_totalWeight);
 
-		PointColoringObject_OneSetBlack pointColoringObject;
+		// For 1000 points, these weights are: 0.028, 0.028, 0.94.
+		// if we do the other way in the projective blue noise paper where it's 1D/2D and 2D/2D respectively, it's nearly the same:
+		// 0.029, 0.029, 1. 
 
 		GeneratePoints(c_numPoints, 64, 10000, "out/Projective", 1, true, true, false, { &a, &b, &c }, pointColoringObject);
 	}
@@ -813,7 +817,7 @@ BLOG:
  * mention that you added a weighting to each class
 * show progressive
 * talk about classes and subclasses, and selection of them
- * continuous subclasses -> the points move slower by being part of a smaller group (m/n) but they also move as part of the larger subset. BUT they move to a different location. is that correct?
+ * continuous subclasses -> the points move slower by being part of a smaller group (m/n) but they also move as part of the larger subset. BUT they move to a different location. kind of strange, not sure if that's good behavior
 * show projective blue noise
  ! projective blue noise paper: https://resources.mpi-inf.mpg.de/ProjectiveBlueNoise/ProjectiveBlueNoise.pdf
  * talk about how you balanced the weights, like the paper says to.
@@ -828,11 +832,10 @@ TODO:
  * perhaps same with projective noise. I don't know that you have the right weighting yet
 * could try showing DFTs that are the average of several realizations. may help show if stratification is good or not? do it as one off special work in that specialized python script we haven't pulled over
 * you need to be able to explain the gradient scaling for your blog post. why does it improve things?
-? what does a continuous membership even mean? maybe show 1 class with a box membership function vs a smooth membership function.
- * with fewer points (higher Z value) in continuous, those points get spread out more. weird.
 ? how do they support toroidal distance for their points? i did a toroidal fixup but that doesn't seem to be it?
 * profile again
-* clean up this code
+* clean up this code, like how you define classes and stuff.
+* need to figure out adam?
 
 Toroidal Progressiveness
 * compare vs halton, and R2
