@@ -173,9 +173,9 @@ public:
 
 	void GetBackgroundColor(unsigned char& R, unsigned char& G, unsigned char& B) const override final
 	{
-		R = 0;
-		G = 0;
-		B = 0;
+		R = 255;
+		G = 255;
+		B = 255;
 	}
 };
 
@@ -528,16 +528,14 @@ int main(int argc, char** argv)
 
 	// Multiclass
 	{
-		// TODO: separate ICDF from membership function, make a templated object take one of each.
-		// TODO: just make it easier to make this stuff
-
 		PointColoringObject_HalfRedHalfBlue pointColoringObject;
 
 		FSOTClass<ICDF_UniformSquare, Filter_Range<0.0f, 0.5f>> firstHalf;
 		FSOTClass<ICDF_UniformSquare, Filter_Range<0.5f, 1.0f>> secondHalf;
 		FSOTClass<ICDF_UniformSquare, Filter_All> all;
 
-		GeneratePoints(1000, 64, 10000, "out/multiclass", 1, true, false, { &firstHalf, &secondHalf, &all }, pointColoringObject);
+		// Same settings as official example from their github, including 50% chance to do the combined set
+		GeneratePoints(1024, 256, 4096, "out/multiclass", 1, true, false, { &firstHalf, &secondHalf, &all, &all }, pointColoringObject);
 	}
 
 	return 0;

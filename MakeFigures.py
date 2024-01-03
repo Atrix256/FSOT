@@ -12,31 +12,37 @@ fileNames = glob.glob("out/*.png")
 # Make DFTs of all images
 for fileName in fileNames:
 
-    loadedImage = Image.open(fileName).convert('L')
-    im = np.array(loadedImage, dtype=float) / 255.0
-    if len(im.shape) == 3:
-        print(fileName + " (Skipped for DFT)")
-        continue
-
     print(fileName)
 
-    # get the DFT magnitude, zero out DC and shift it so DC is in the middle
-    dft = abs(np.fft.fft2(im))
-    dft[0,0] = 0.0
-    dft = np.fft.fftshift(dft)
+    # Load the image
+    loadedImage = Image.open(fileName)
 
-    # log and normalize DFT
-    imOut = np.log(1+dft)
-    themin = np.min(imOut)
-    themax = np.max(imOut)
-    if themin != themax:
-        imOut = (imOut - themin) / (themax - themin)
-    else:
-        imOut = imOut
+    # DFT
+    if ".gauss." not in fileName:
+        # convert to greyscale to handle color images
+        im = np.array(loadedImage.convert('L'), dtype=float) / 255.0
 
-    # Write out DFT
-    outFileName = fileName + ".magnitude.png"
-    Image.fromarray((imOut*255.0).astype(np.uint8), mode="L").save(outFileName)
+        # actually, convert to black and white. we could convert to mode '1' but that does dithering and we don't want that
+        im2 = (im == 1.0) * 1.0
+        im = im2
+
+        # get the DFT magnitude, zero out DC and shift it so DC is in the middle
+        dft = abs(np.fft.fft2(im))
+        dft[0,0] = 0.0
+        dft = np.fft.fftshift(dft)
+
+        # log and normalize DFT
+        imOut = np.log(1+dft)
+        themin = np.min(imOut)
+        themax = np.max(imOut)
+        if themin != themax:
+            imOut = (imOut - themin) / (themax - themin)
+        else:
+            imOut = imOut
+
+        # Write out DFT
+        outFileName = fileName + ".magnitude.png"
+        Image.fromarray((imOut*255.0).astype(np.uint8), mode="L").save(outFileName)
     
     # Tile image as 3x3
     if makeTiles:
