@@ -75,3 +75,8 @@ inline float Fract(float f)
 {
 	return f - std::floor(f);
 }
+
+inline bool IsPowerOf2(int n)
+{
+	return (n & (n - 1)) == 0;
+}

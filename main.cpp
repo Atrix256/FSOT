@@ -3,15 +3,15 @@
 // Settings
 #define DETERMINISTIC() true
 #define MULTITHREADED() true
-static const int c_pointImageSize = 256;
 
 static const bool c_writePointSetTxt = false;
 
-static const bool c_drawNonGaussImage = true;
-
 static const bool c_drawStartingState = false;
 
-static const bool c_drawGaussImage = true;
+static const bool c_drawPointImage = true;
+static const int c_pointImageSize = 256;
+
+static const bool c_drawGaussImage = false;
 static const int c_pointImageGaussSize = 512;
 static const float c_pointImageGaussBlobSigma = 1.5f;
 
@@ -105,19 +105,32 @@ public:
 	}
 };
 
+class Filter_Progressive
+{
+public:
+	void Filter(const std::vector<float2>& points, float subClassZ, std::vector<int>& memberPoints) const
+	{
+		int indexMax = Clamp(int(subClassZ * float(points.size())), 0, int(points.size()));
+		memberPoints.resize(indexMax);
+		for (int i = 0; i < indexMax; ++i)
+			memberPoints[i] = i;
+	}
+};
+
 class PointColoringObjectBase
 {
 public:
-	virtual int NumSets() const = 0;
+	virtual int NumSets(const std::vector<float2>& points) const = 0;
 	virtual std::vector<float2> GetSet(const std::vector<float2>& points, int setIndex) const = 0;
 	virtual void GetSetColor(int setIndex, unsigned char& R, unsigned char& G, unsigned char& B) const = 0;
 	virtual void GetBackgroundColor(unsigned char& R, unsigned char& G, unsigned char& B) const = 0;
+	virtual bool ShowSetPermutations() const = 0;
 };
 
 class PointColoringObject_OneSetBlack : public PointColoringObjectBase
 {
 public:
-	int NumSets() const override final
+	int NumSets(const std::vector<float2>& points) const override final
 	{
 		return 1;
 	}
@@ -142,12 +155,65 @@ public:
 		G = 255;
 		B = 255;
 	}
+
+	bool ShowSetPermutations() const override final
+	{
+		return true;
+	}
+};
+
+template <int NUM_SETS = 0>
+class PointColoringObject_Progressive : public PointColoringObjectBase
+{
+public:
+	int NumSets(const std::vector<float2>& points) const override final
+	{
+		return NUM_SETS ? NUM_SETS : (int)points.size();
+	}
+
+	std::vector<float2> GetSet(const std::vector<float2>& points, int setIndex) const override final
+	{
+		if (NUM_SETS == 0)
+		{
+			std::vector<float2> ret(setIndex + 1);
+			for (int i = 0; i < setIndex; ++i)
+				ret[i] = points[i];
+			return ret;
+		}
+		else
+		{
+			int setEnd = int(float(setIndex + 1) * float(points.size()) / float(NUM_SETS));
+			std::vector<float2> ret(setEnd);
+			for (int i = 0; i < setEnd; ++i)
+				ret[i] = points[i];
+			return ret;
+		}
+	}
+
+	void GetSetColor(int setIndex, unsigned char& R, unsigned char& G, unsigned char& B) const override final
+	{
+		R = 0;
+		G = 0;
+		B = 0;
+	}
+
+	void GetBackgroundColor(unsigned char& R, unsigned char& G, unsigned char& B) const override final
+	{
+		R = 255;
+		G = 255;
+		B = 255;
+	}
+
+	bool ShowSetPermutations() const override final
+	{
+		return false;
+	}
 };
 
 class PointColoringObject_HalfRedHalfBlue: public PointColoringObjectBase
 {
 public:
-	int NumSets() const override final
+	int NumSets(const std::vector<float2>& points) const override final
 	{
 		return 2;
 	}
@@ -176,6 +242,11 @@ public:
 		R = 255;
 		G = 255;
 		B = 255;
+	}
+
+	bool ShowSetPermutations() const override final
+	{
+		return true;
 	}
 };
 
@@ -216,7 +287,7 @@ void PlotGaussian(std::vector<unsigned char>& image, int width, int height, int 
 
 void SavePointSet(const std::vector<float2>& points, const char* baseFileName, int progressIndex, int progressTotal, const PointColoringObjectBase& pointColoringObject)
 {
-	const int numSets = pointColoringObject.NumSets();
+	const int numSets = pointColoringObject.NumSets(points);
 
 	// Write out points in text
 	if (c_writePointSetTxt)
@@ -232,7 +303,7 @@ void SavePointSet(const std::vector<float2>& points, const char* baseFileName, i
 
 			for (int setIndex = 0; setIndex < numSets; ++setIndex)
 			{
-				fprintf(file, "\n    // Set %i\n", setIndex);
+				fprintf(file, "\n    // Class %i\n", setIndex);
 				for (const float2& p : pointColoringObject.GetSet(points, setIndex))
 					fprintf(file, "    { %ff, %ff, %ff },\n", p.x, p.y, float(setIndex));
 			}
@@ -250,7 +321,8 @@ void SavePointSet(const std::vector<float2>& points, const char* baseFileName, i
 	}
 
 	// Draw an image of the points
-	if (c_drawNonGaussImage || c_drawGaussImage)
+	int imageCount = 0;
+	if (c_drawPointImage || c_drawGaussImage)
 	{
 		unsigned char bg[3];
 		pointColoringObject.GetBackgroundColor(bg[0], bg[1], bg[2]);
@@ -258,9 +330,16 @@ void SavePointSet(const std::vector<float2>& points, const char* baseFileName, i
 		std::vector<unsigned char> pixels(c_pointImageSize * c_pointImageSize * 3);
 		std::vector<unsigned char> pixelsGauss(c_pointImageGaussSize * c_pointImageGaussSize * 3, 255);
 
-		int classPermutations = 1 << numSets;
+		bool showSetPermutations = pointColoringObject.ShowSetPermutations();
+		int loopIndexStart = 0;
+		int loopIndexEnd = numSets;
+		if (showSetPermutations)
+		{
+			loopIndexStart = 1;
+			loopIndexEnd = 1 << numSets;
+		}
 
-		for (int permutationIndex = 1; permutationIndex < classPermutations; ++permutationIndex)
+		for (int loopIndex = loopIndexStart; loopIndex < loopIndexEnd; ++loopIndex)
 		{
 			for (size_t index = 0; index < c_pointImageSize * c_pointImageSize; ++index)
 				memcpy(&pixels[index * 3], bg, 3);
@@ -268,9 +347,17 @@ void SavePointSet(const std::vector<float2>& points, const char* baseFileName, i
 			for (size_t index = 0; index < c_pointImageGaussSize * c_pointImageGaussSize; ++index)
 				memcpy(&pixelsGauss[index * 3], bg, 3);
 
-			for (int setIndex = 0; setIndex < numSets; ++setIndex)
+			int setIndexStart = loopIndex;
+			int setIndexEnd = loopIndex + 1;
+			if (showSetPermutations)
 			{
-				if ((permutationIndex & (1 << setIndex)) == 0)
+				setIndexStart = 0;
+				setIndexEnd = numSets;
+			}
+
+			for (int setIndex = setIndexStart; setIndex < setIndexEnd; ++setIndex)
+			{
+				if (showSetPermutations && (loopIndex & (1 << setIndex)) == 0)
 					continue;
 
 				unsigned char fg[3];
@@ -278,7 +365,7 @@ void SavePointSet(const std::vector<float2>& points, const char* baseFileName, i
 
 				for (const float2& p : pointColoringObject.GetSet(points, setIndex))
 				{
-					if (c_drawNonGaussImage)
+					if (c_drawPointImage)
 					{
 						int x = (int)Clamp((p.x * 0.5f + 0.5f) * float(c_pointImageSize - 1), 0.0f, float(c_pointImageSize - 1));
 						int y = (int)Clamp((p.y * 0.5f + 0.5f) * float(c_pointImageSize - 1), 0.0f, float(c_pointImageSize - 1));
@@ -297,17 +384,25 @@ void SavePointSet(const std::vector<float2>& points, const char* baseFileName, i
 			char permutationString[64] = { 0 };
 			if (numSets > 1)
 			{
-				strcat(permutationString, ".");
-				for (int setIndex = 0; setIndex < numSets; ++setIndex)
+				if (!showSetPermutations)
 				{
-					if ((permutationIndex & (1 << setIndex)) == 0)
-						strcat(permutationString, "F");
-					else
-						strcat(permutationString, "T");
+					sprintf_s(permutationString, ".%i", imageCount);
+					imageCount++;
+				}
+				else
+				{
+					strcat(permutationString, ".");
+					for (int setIndex = 0; setIndex < numSets; ++setIndex)
+					{
+						if ((loopIndex & (1 << setIndex)) == 0)
+							strcat(permutationString, "F");
+						else
+							strcat(permutationString, "T");
+					}
 				}
 			}
 
-			if (c_drawNonGaussImage)
+			if (c_drawPointImage)
 			{
 				char fileName[1024];
 				sprintf_s(fileName, "%s_%i_%i%s.png", baseFileName, progressIndex, progressTotal, permutationString);
@@ -324,7 +419,7 @@ void SavePointSet(const std::vector<float2>& points, const char* baseFileName, i
 	}
 }
 
-void GeneratePoints(int numPoints, int batchSize, int numIterations, const char* baseFileName, int numProgressImages, bool useGradientScalingFactor, bool stratifyLine, const std::vector<const FSOTClassBase*>& classes, const PointColoringObjectBase& pointColoringObject)
+void GeneratePoints(int numPoints, int batchSize, int numIterations, const char* baseFileName, int numProgressImages, bool useGradientScalingFactor, bool stratifyLine, bool toroidalFixup, const std::vector<const FSOTClassBase*>& classes, const PointColoringObjectBase& pointColoringObject)
 {
 	// get the timestamp of when this started
 	std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
@@ -421,6 +516,10 @@ void GeneratePoints(int numPoints, int batchSize, int numIterations, const char*
 			// Filter the points so that batchData.sorted contains the point indices that are members
 			FSOTClass.Filter(points, subClassZ, batchData.sorted);
 
+			// if no points selected, don't do anything
+			if (batchData.sorted.size() == 0)
+				continue;
+
 			// Project the points
 			for (int i : batchData.sorted)
 				batchData.projections[i] = Dot(direction, points[i]);
@@ -448,7 +547,7 @@ void GeneratePoints(int numPoints, int batchSize, int numIterations, const char*
 				float projectionDiff = projectionTarget - projection;
 
 				float gradientFactor = 1.0f;
-				if (useGradientScalingFactor)
+				if (useGradientScalingFactor && batchData.sorted.size() > 1)
 				{
 					int lastIndex = std::max(int(i) - 1, 0);
 					int nextIndex = std::min(int(i) + 1, int(batchData.sorted.size()) - 1);
@@ -485,6 +584,21 @@ void GeneratePoints(int numPoints, int batchSize, int numIterations, const char*
 			points[i].x += adjust.x;
 			points[i].y += adjust.y;
 
+			if (toroidalFixup)
+			{
+				while (points[i].x < -1.0f)
+					points[i].x += 2.0f;
+
+				while (points[i].x > 1.0f)
+					points[i].x -= 2.0f;
+
+				while (points[i].y < -1.0f)
+					points[i].y += 2.0f;
+
+				while (points[i].y > 1.0f)
+					points[i].y -= 2.0f;
+			}
+
 			totalDistance += std::sqrt(adjust.x * adjust.x + adjust.y * adjust.y);
 		}
 
@@ -514,16 +628,21 @@ int main(int argc, char** argv)
 
 	// 1) Show the benefit of the gradient scaling fix
 	// 2) Compare stratifying the line vs not
+	// 3) Compare toroidal fixup vs not
+	if (false)
 	{
 		FSOTClass<ICDF_UniformSquare, Filter_All> a;
 		PointColoringObject_OneSetBlack pointColoringObject;
 
 		// 1) Show the benefit of the gradient scaling fix
-		GeneratePoints(1000, 64, 1000, "out/GradFixNoStratifyNo", 1, false, false, { &a }, pointColoringObject);
-		GeneratePoints(1000, 64, 1000, "out/GradFixYesStratifyNo", 1, true, false, { &a }, pointColoringObject);
+		GeneratePoints(1000, 64, 1000, "out/GradFixNoStratifyNoToroidalNo", 1, false, false, false, { &a }, pointColoringObject);
+		GeneratePoints(1000, 64, 1000, "out/GradFixYesStratifyNoToroidalNo", 1, true, false, false, { &a }, pointColoringObject);
 
 		// 2) Compare stratifying the line vs not
-		GeneratePoints(1000, 64, 1000, "out/GradFixYesStratifyYes", 1, true, true, { &a }, pointColoringObject);
+		GeneratePoints(1000, 64, 1000, "out/GradFixYesStratifyYesToroidalNo", 1, true, true, false, { &a }, pointColoringObject);
+
+		// 3) Compare toroidal fixup vs not
+		GeneratePoints(1000, 64, 1000, "out/GradFixYesStratifyNoToroidalYes", 1, true, false, true, { &a }, pointColoringObject);
 	}
 
 	// Multiclass
@@ -535,17 +654,26 @@ int main(int argc, char** argv)
 		FSOTClass<ICDF_UniformSquare, Filter_All> all;
 
 		// Same settings as official example from their github, including 50% chance to do the combined set
-		GeneratePoints(1024, 256, 4096, "out/multiclass", 1, true, false, { &firstHalf, &secondHalf, &all, &all }, pointColoringObject);
+		GeneratePoints(1024, 256, 4096, "out/Multiclass", 1, true, false, false, { &firstHalf, &secondHalf, &all, &all }, pointColoringObject);
+	}
+
+	// Progressive vs Non progressive
+	if (false)
+	{
+		FSOTClass<ICDF_UniformSquare, Filter_Progressive> a;
+		FSOTClass<ICDF_UniformSquare, Filter_All> b;
+
+		PointColoringObject_Progressive<4> pointColoringObject;
+
+		// Same settings as official example from their github
+		GeneratePoints(1024, 128, 4096, "out/ProgressiveYes", 1, true, false, false, { &a }, pointColoringObject);
+		GeneratePoints(1024, 128, 4096, "out/ProgressiveNo", 1, true, false, false, { &b }, pointColoringObject);
 	}
 
 	return 0;
 }
 
 /*
-A class has...
-1) A membership lambda. Take a Z value and point count, it returns a vector of points that are in the membership.
-2) a target desnity. like an ICDF to project?
-
 
 FSOT PAPER NOTES:
 * FSOT paper has batch size of 64 by default. 4096 iterations. 4096 points.
@@ -554,9 +682,16 @@ FSOT PAPER NOTES:
 BLOG:
 * first, compare GradFixNo to GradFixYes, showing how it improves that "overconvergence" thing. should have a better DFT than not letting it go to convergence (compare the 3 point sets, and DFTs)
 * Note that you are making the target be the center of each bucket, put through the ICDF, but they are stratifying. Compare the 2, see if there's a difference. note that not timothy lottes mentioned that too, after the last post.
+* show multiclass
+* show progressive
 
 TODO:
-* your multiclass noise has a not great combined frequency, is that correct? what about each class? The paper seems to have nice frequencies for multiclass, look at what they do
+* could add a weight for each class, and do "weighted round robin" for selection or something? yeah do this
+* projective point sets (and progressive / projective. and toroidally progressive / projective)
+ * for projective may need to have the ICDF be able to define the projection direction (axis aligned!)
+* your progressive point st isn't the highest quality. why not? They use adam (see slicedOptimalTransportBatchCube_progressive()), maybe that is why? but their code doesn't really even do progressive as far as i can tell...
+ * same with multiclass right?
+ * could generate and look at their points and see if they are the same
 * could try showing DFTs that are the average of several realizations. may help show if stratification is good or not?
 * you need to be able to explain the gradient scaling for your blog post. why does it improve things?
 * point sets, and noise textures
@@ -564,11 +699,12 @@ TODO:
 * toroidally progressive point set (secret for now? JCGT?)
 ? what does a continuous membership even mean? maybe show 1 class with a box membership function vs a smooth membership function.
  * with fewer points (higher Z value) in continuous, those points get spread out more. weird.
-? how do they support toroidal distance for their points?
+? how do they support toroidal distance for their points? i did a toroidal fixup but that doesn't seem to be it?
 * profile again
 
 Toroidal Progressiveness
 * compare vs halton, and R2
 * projective blue noise and not projective
+* figure out adam first and use it?
 
 */
