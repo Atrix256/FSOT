@@ -783,28 +783,83 @@ int main(int argc, char** argv)
 	{
 		static const int c_numPoints = 1000;
 
-		static const float c_MaxRadius1D = MaxPackedSphereRadiusDimension1(c_numPoints);
-		static const float c_MaxRadius2D = MaxPackedSphereRadiusDimension2(c_numPoints);
-
 		PointColoringObject_OneSetBlack pointColoringObject;
 
-		static const float c_totalWeight = c_MaxRadius1D + c_MaxRadius1D + c_MaxRadius2D;
+		// Use weighting from the projective blue noise paper
+		{
+			static const float c_MaxRadius1D = MaxPackedSphereRadiusDimension1(c_numPoints);
+			static const float c_MaxRadius2D = MaxPackedSphereRadiusDimension2(c_numPoints);
 
-		FSOTClass<ICDF_UniformXAxis, Filter_All> a(c_MaxRadius1D / c_totalWeight);
-		FSOTClass<ICDF_UniformYAxis, Filter_All> b(c_MaxRadius1D / c_totalWeight);
-		FSOTClass<ICDF_UniformSquare, Filter_All> c(c_MaxRadius2D / c_totalWeight);
+			static const float c_totalWeight = c_MaxRadius1D + c_MaxRadius1D + c_MaxRadius2D;
 
-		// For 1000 points, these weights are: 0.028, 0.028, 0.94.
-		// if we do the other way in the projective blue noise paper where it's 1D/2D and 2D/2D respectively, it's nearly the same:
-		// 0.029, 0.029, 1. 
+			FSOTClass<ICDF_UniformXAxis, Filter_All> a(c_MaxRadius1D / c_totalWeight);
+			FSOTClass<ICDF_UniformYAxis, Filter_All> b(c_MaxRadius1D / c_totalWeight);
+			FSOTClass<ICDF_UniformSquare, Filter_All> c(c_MaxRadius2D / c_totalWeight);
 
-		GeneratePoints(c_numPoints, 64, 10000, "out/Projective", 1, true, true, false, { &a, &b, &c }, pointColoringObject);
+			// For 1000 points, these weights are: 0.028, 0.028, 0.94.
+			// if we do the other way in the projective blue noise paper where it's 1D/2D and 2D/2D respectively, it's nearly the same:
+			// 0.029, 0.029, 1. 
+
+			GeneratePoints(c_numPoints, 64, 10000, "out/Projective_Paper", 1, true, false, false, { &a, &b, &c }, pointColoringObject);
+		}
+
+		// Use equal weighting for the projections, like the sliced optimal transport paper uses
+		{
+			FSOTClass<ICDF_UniformXAxis, Filter_All> a;
+			FSOTClass<ICDF_UniformYAxis, Filter_All> b;
+			FSOTClass<ICDF_UniformSquare, Filter_All> c;
+
+			GeneratePoints(c_numPoints, 64, 10000, "out/Projective_Equal", 1, true, false, false, { &a, &b, &c }, pointColoringObject);
+		}
+
+		// use double weighting for the combined result
+		{
+			FSOTClass<ICDF_UniformXAxis, Filter_All> a;
+			FSOTClass<ICDF_UniformYAxis, Filter_All> b;
+			FSOTClass<ICDF_UniformSquare, Filter_All> c(2.0f);
+
+			GeneratePoints(c_numPoints, 64, 10000, "out/Projective_SemiEqual", 1, true, false, false, { &a, &b, &c }, pointColoringObject);
+		}
 	}
 
 	return 0;
 }
 
 /*
+
+TODO:
+* clean up code and make a "2d" version for textures.
+ * ! start by making a 1d texture. all it is, is "positional membership", with a bunch of overlapping sets of membership.
+  * it makes diversity in small regions.
+ * look at DFT
+ * also histogram
+ * and threshold
+ * compare box vs gauss -> both for membership and for ICDF?
+ ? can we make spatiotemporal blue noise? i do think so!
+ ? can we make projective (scalar) blue noise textures?
+* toroidally progressive point set (secret for now? JCGT?)
+ * and projective while toroidally progressives, after
+* noise textures
+* your progressive point st isn't the highest quality. why not? They use adam (see slicedOptimalTransportBatchCube_progressive()), maybe that is why? but their code doesn't really even do progressive as far as i can tell...
+ * same with multiclass right?
+ * could generate and look at their points and see if they are the same
+ * perhaps same with projective noise. I don't know that you have the right weighting yet
+* could try showing DFTs that are the average of several realizations. may help show if stratification is good or not? do it as one off special work in that specialized python script we haven't pulled over
+* you need to be able to explain the gradient scaling for your blog post. why does it improve things?
+? how do they support toroidal distance for their points? i did a toroidal fixup but that doesn't seem to be it?
+* profile again
+* clean up this code, like how you define classes and stuff.
+* need to figure out adam?
+? OT tends to make blue noise. is there a way to make it red etc? maybe using LPF (etc) filters as a pdf?
+ * could try a box filter instead of a gaussian? oh wait that's just a uniform distribution.
+
+Toroidal Progressiveness
+* compare vs halton, and R2
+* projective blue noise and not projective
+* figure out adam first and use it?
+
+
+
 
 FSOT PAPER NOTES:
 * FSOT paper has batch size of 64 by default. 4096 iterations. 4096 points.
@@ -821,25 +876,7 @@ BLOG:
 * show projective blue noise
  ! projective blue noise paper: https://resources.mpi-inf.mpg.de/ProjectiveBlueNoise/ProjectiveBlueNoise.pdf
  * talk about how you balanced the weights, like the paper says to.
-
-TODO:
-* toroidally progressive point set (secret for now? JCGT?)
- * and projective while toroidally progressives, after
-* noise textures
-* your progressive point st isn't the highest quality. why not? They use adam (see slicedOptimalTransportBatchCube_progressive()), maybe that is why? but their code doesn't really even do progressive as far as i can tell...
- * same with multiclass right?
- * could generate and look at their points and see if they are the same
- * perhaps same with projective noise. I don't know that you have the right weighting yet
-* could try showing DFTs that are the average of several realizations. may help show if stratification is good or not? do it as one off special work in that specialized python script we haven't pulled over
-* you need to be able to explain the gradient scaling for your blog post. why does it improve things?
-? how do they support toroidal distance for their points? i did a toroidal fixup but that doesn't seem to be it?
-* profile again
-* clean up this code, like how you define classes and stuff.
-* need to figure out adam?
-
-Toroidal Progressiveness
-* compare vs halton, and R2
-* projective blue noise and not projective
-* figure out adam first and use it?
+ * section 3.6 says they just use equal weight for all of em, and didn't do much analysis otherwise. http://www.geometry.caltech.edu/pubs/PBCIW+20.pdf
+! this is a great framework.  Hard to know how many batches to do.  Hard to know how many iterations to do, or a learning rate, but Adam helps.
 
 */
