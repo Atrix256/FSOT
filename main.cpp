@@ -99,14 +99,10 @@ int main(int argc, char** argv)
 		fsot_not.GeneratePoints<DebugOutput_Points_float2_Progressive<4>>(1024, "out/ProgressiveNo", 1, GenerateRandomFloat2);
 	}
 
-#if 0
-
 	// Projective
 	if (c_doProjective)
 	{
-		static const int c_numPoints = 1000;
-
-		PointColoringObject_OneSetBlack pointColoringObject;
+		static const int c_numPoints = 1024;
 
 		// Use weighting from the projective blue noise paper
 		{
@@ -115,35 +111,52 @@ int main(int argc, char** argv)
 
 			static const float c_totalWeight = c_MaxRadius1D + c_MaxRadius1D + c_MaxRadius2D;
 
-			FSOTClass<ICDF_UniformXAxis, Filter_All> a(c_MaxRadius1D / c_totalWeight);
-			FSOTClass<ICDF_UniformYAxis, Filter_All> b(c_MaxRadius1D / c_totalWeight);
-			FSOTClass<ICDF_UniformSquare, Filter_All> c(c_MaxRadius2D / c_totalWeight);
+			FSOT<float2> fsot;
+			fsot.AddClass<CDF_UniformXAxis, Filter_All>(c_MaxRadius1D / c_totalWeight);
+			fsot.AddClass<CDF_UniformYAxis, Filter_All>(c_MaxRadius1D / c_totalWeight);
+			fsot.AddClass<CDF_UniformSquare, Filter_All>(c_MaxRadius2D / c_totalWeight);
+			fsot.m_batchSize = 64;
+			fsot.m_numIterations = 10000;
+			fsot.m_useGradientScalingFactor = true;
+			fsot.m_stratifyLine = false;
 
 			// For 1000 points, these weights are: 0.028, 0.028, 0.94.
 			// if we do the other way in the projective blue noise paper where it's 1D/2D and 2D/2D respectively, it's nearly the same:
 			// 0.029, 0.029, 1. 
 
-			GeneratePoints(c_numPoints, 64, 10000, "out/Projective_Paper", 1, true, false, false, { &a, &b, &c }, pointColoringObject);
+			fsot.GeneratePoints<DebugOutput_Points_float2>(c_numPoints, "out/Projective_Paper", 1, GenerateRandomFloat2);
 		}
 
 		// Use equal weighting for the projections, like the sliced optimal transport paper uses
 		{
-			FSOTClass<ICDF_UniformXAxis, Filter_All> a;
-			FSOTClass<ICDF_UniformYAxis, Filter_All> b;
-			FSOTClass<ICDF_UniformSquare, Filter_All> c;
+			FSOT<float2> fsot;
+			fsot.AddClass<CDF_UniformXAxis, Filter_All>();
+			fsot.AddClass<CDF_UniformYAxis, Filter_All>();
+			fsot.AddClass<CDF_UniformSquare, Filter_All>();
+			fsot.m_batchSize = 64;
+			fsot.m_numIterations = 10000;
+			fsot.m_useGradientScalingFactor = true;
+			fsot.m_stratifyLine = false;
 
-			GeneratePoints(c_numPoints, 64, 10000, "out/Projective_Equal", 1, true, false, false, { &a, &b, &c }, pointColoringObject);
+			fsot.GeneratePoints<DebugOutput_Points_float2>(c_numPoints, "out/Projective_Equal", 1, GenerateRandomFloat2);
 		}
 
 		// use double weighting for the combined result
 		{
-			FSOTClass<ICDF_UniformXAxis, Filter_All> a;
-			FSOTClass<ICDF_UniformYAxis, Filter_All> b;
-			FSOTClass<ICDF_UniformSquare, Filter_All> c(2.0f);
+			FSOT<float2> fsot;
+			fsot.AddClass<CDF_UniformXAxis, Filter_All>();
+			fsot.AddClass<CDF_UniformYAxis, Filter_All>();
+			fsot.AddClass<CDF_UniformSquare, Filter_All>(2.0f);
+			fsot.m_batchSize = 64;
+			fsot.m_numIterations = 10000;
+			fsot.m_useGradientScalingFactor = true;
+			fsot.m_stratifyLine = false;
 
-			GeneratePoints(c_numPoints, 64, 10000, "out/Projective_SemiEqual", 1, true, false, false, { &a, &b, &c }, pointColoringObject);
+			fsot.GeneratePoints<DebugOutput_Points_float2>(c_numPoints, "out/Projective_SemiEqual", 1, GenerateRandomFloat2);
 		}
 	}
+
+#if 0
 
 	if (c_do1DBNTexture)
 	{
@@ -160,8 +173,6 @@ int main(int argc, char** argv)
 /*
 
 TODO:
-* finish cleaning up all this code
-* filters could be a lambda. ICDF is more complex though
 * clean up code and make a "2d" version for textures.
  * ! start by making a 1d texture. all it is, is "positional membership", with a bunch of overlapping sets of membership.
   * it makes diversity in small regions.
