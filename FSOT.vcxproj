@@ -147,9 +147,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="DebugOutput.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="CDFs.h" />
+    <ClInclude Include="DebugOutput.h" />
+    <ClInclude Include="Filters.h" />
+    <ClInclude Include="FSOT.h" />
     <ClInclude Include="maths.h" />
     <ClInclude Include="NumericalCDF.h" />
     <ClInclude Include="squarecdf.h" />

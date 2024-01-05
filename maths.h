@@ -9,6 +9,14 @@ struct float2
 {
 	float x = 0.0f;
 	float y = 0.0f;
+
+	float2 operator+ (const float2& other) const
+	{
+		float2 ret;
+		ret.x = x + other.x;
+		ret.y = y + other.y;
+		return ret;
+	}
 };
 
 inline float Dot(const float2& a, const float2& b)

@@ -8,7 +8,7 @@ import os
 
 makeTiles = False
 
-fileNames = glob.glob("out/*.png")
+fileNames = glob.glob("out/*.points.png") + glob.glob("out/*.gauss.png")
 
 # Make DFTs of all images
 for fileName in fileNames:
@@ -78,8 +78,8 @@ for fileName in fileNames:
 
     plt.title('Log/Log Average Movement Each Iteration: ' + fileName)
 
-    fig.axes[0].set_xscale('log', base=2)
-    fig.axes[0].set_yscale('log', base=2)
+    fig.axes[0].set_xscale('log', base=10)
+    fig.axes[0].set_yscale('log', base=10)
 
     fig.tight_layout()
     fig.savefig(fileNameNoExtension + ".graph.png", bbox_inches='tight')
