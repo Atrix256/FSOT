@@ -11,81 +11,6 @@
 #include "CDFs.h"
 #include "DebugOutput.h"
 
-// TODO: get rid of these point coloring objects!
-
-template <int NUM_SETS = 0>
-class PointColoringObject_Progressive 
-{
-public:
-	static int NumSets(const std::vector<float2>& points)
-	{
-		return NUM_SETS ? NUM_SETS : (int)points.size();
-	}
-
-	static std::vector<float2> GetSet(const std::vector<float2>& points, int setIndex)
-	{
-		if (NUM_SETS == 0)
-		{
-			std::vector<float2> ret(setIndex + 1);
-			for (int i = 0; i < setIndex; ++i)
-				ret[i] = points[i];
-			return ret;
-		}
-		else
-		{
-			int setEnd = int(float(setIndex + 1) * float(points.size()) / float(NUM_SETS));
-			std::vector<float2> ret(setEnd);
-			for (int i = 0; i < setEnd; ++i)
-				ret[i] = points[i];
-			return ret;
-		}
-	}
-
-	static void GetSetColor(int setIndex, unsigned char& R, unsigned char& G, unsigned char& B)
-	{
-		R = 0;
-		G = 0;
-		B = 0;
-	}
-
-	static bool ShowSetPermutations()
-	{
-		return false;
-	}
-};
-
-class PointColoringObject_HalfRedHalfBlue
-{
-public:
-	static int NumSets(const std::vector<float2>& points)
-	{
-		return 2;
-	}
-
-	static std::vector<float2> GetSet(const std::vector<float2>& points, int setIndex)
-	{
-		int start = (setIndex == 0) ? 0 : int(points.size()) / 2;
-		int end = (setIndex == 0) ? int(points.size()) / 2 : int(points.size());
-
-		std::vector<float2> ret(end - start);
-		for (int i = start; i < end; ++i)
-			ret[i - start] = points[i];
-
-		return ret;
-	}
-
-	static void GetSetColor(int setIndex, unsigned char& R, unsigned char& G, unsigned char& B)
-	{
-		R = (setIndex == 0) ? 255 : 0;
-		G = 0;
-		B = (setIndex == 1) ? 255 : 0;
-	}
-
-	static bool ShowSetPermutations()
-	{
-		return true;
-	}
-};
 
 void GenerateRandomFloat2(std::mt19937& rng, float2& p)
 {
@@ -99,9 +24,9 @@ int main(int argc, char** argv)
 	_mkdir("out");
 
 	static const bool c_doGradFixComparison = false;
-	static const bool c_doMulticlass = true;
+	static const bool c_doMulticlass = false;
 	static const bool c_doProgressive = false;
-	static const bool c_doProjective = false;
+	static const bool c_doProjective = true;
 
 	static const bool c_do1DBNTexture = true;
 
@@ -137,34 +62,44 @@ int main(int argc, char** argv)
 		*/
 	}
 
-#if 0
-
 	// Multiclass
 	if (c_doMulticlass)
 	{
-		PointColoringObject_HalfRedHalfBlue pointColoringObject;
+		// Set up FSOT to make 2 class blue noise point sets
+		FSOT<float2> fsot;
+		fsot.AddClass<CDF_UniformSquare, Filter_Range<0.0f, 0.5f>>();
+		fsot.AddClass<CDF_UniformSquare, Filter_Range<0.5f, 1.0f>>();
+		fsot.AddClass<CDF_UniformSquare, Filter_All>(2.0f);
+		fsot.m_batchSize = 256;
+		fsot.m_numIterations = 4096;
+		fsot.m_useGradientScalingFactor = true;
+		fsot.m_stratifyLine = false;
 
-		FSOTClass<ICDF_UniformSquare, Filter_Range<0.0f, 0.5f>> firstHalf;
-		FSOTClass<ICDF_UniformSquare, Filter_Range<0.5f, 1.0f>> secondHalf;
-		FSOTClass<ICDF_UniformSquare, Filter_All> all(2.0f);
-
-		// Same settings as official example from their github, including 50% chance to do the combined set
-		GeneratePoints(1024, 256, 4096, "out/Multiclass", 1, true, false, false, { &firstHalf, &secondHalf, &all}, pointColoringObject);
+		fsot.GeneratePoints<DebugOutput_Points_float2_TwoClass>(1024, "out/Multiclass", 1, GenerateRandomFloat2);
 	}
-
 
 	// Progressive vs Non progressive
 	if (c_doProgressive)
 	{
-		FSOTClass<ICDF_UniformSquare, Filter_Progressive> a;
-		FSOTClass<ICDF_UniformSquare, Filter_All> b;
+		FSOT<float2> fsot_progressive;
+		fsot_progressive.AddClass<CDF_UniformSquare, Filter_Progressive>();
+		fsot_progressive.m_batchSize = 128;
+		fsot_progressive.m_numIterations = 4096;
+		fsot_progressive.m_useGradientScalingFactor = true;
+		fsot_progressive.m_stratifyLine = false;
 
-		PointColoringObject_Progressive<4> pointColoringObject;
+		FSOT<float2> fsot_not;
+		fsot_not.AddClass<CDF_UniformSquare, Filter_All>();
+		fsot_not.m_batchSize = 128;
+		fsot_not.m_numIterations = 4096;
+		fsot_not.m_useGradientScalingFactor = true;
+		fsot_not.m_stratifyLine = false;
 
-		// Same settings as official example from their github
-		GeneratePoints(1024, 128, 4096, "out/ProgressiveYes", 1, true, false, false, { &a }, pointColoringObject);
-		GeneratePoints(1024, 128, 4096, "out/ProgressiveNo", 1, true, false, false, { &b }, pointColoringObject);
+		fsot_progressive.GeneratePoints<DebugOutput_Points_float2_Progressive<4>>(1024, "out/ProgressiveYes", 1, GenerateRandomFloat2);
+		fsot_not.GeneratePoints<DebugOutput_Points_float2_Progressive<4>>(1024, "out/ProgressiveNo", 1, GenerateRandomFloat2);
 	}
+
+#if 0
 
 	// Projective
 	if (c_doProjective)
@@ -225,6 +160,7 @@ int main(int argc, char** argv)
 /*
 
 TODO:
+* finish cleaning up all this code
 * filters could be a lambda. ICDF is more complex though
 * clean up code and make a "2d" version for textures.
  * ! start by making a 1d texture. all it is, is "positional membership", with a bunch of overlapping sets of membership.
