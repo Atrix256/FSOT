@@ -8,7 +8,7 @@ import os
 
 makeTiles = False
 
-fileNames = glob.glob("out/*.points.png") + glob.glob("out/*.gauss.png")
+fileNames = glob.glob("out/*.points.png") + glob.glob("out/*.gauss.png") + glob.glob("out/*.texture2D.png")
 
 # Make DFTs of all images
 for fileName in fileNames:
@@ -25,9 +25,10 @@ for fileName in fileNames:
         # convert to greyscale to handle color images
         im = np.array(loadedImage.convert('L'), dtype=float) / 255.0
 
-        # actually, convert to black and white. we could convert to mode '1' but that does dithering and we don't want that
-        im2 = (im == 1.0) * 1.0
-        im = im2
+        # convert point images to black and white. we could convert to mode '1' but that does dithering and we don't want that
+        if ".texture2D." not in fileName:
+            im2 = (im == 1.0) * 1.0
+            im = im2
 
         # get the DFT magnitude, zero out DC and shift it so DC is in the middle
         dft = abs(np.fft.fft2(im))
@@ -78,8 +79,8 @@ for fileName in fileNames:
 
     plt.title('Log/Log Average Movement Each Iteration: ' + fileName)
 
-    fig.axes[0].set_xscale('log', base=10)
-    fig.axes[0].set_yscale('log', base=10)
+    fig.axes[0].set_xscale('log', base=2)
+    fig.axes[0].set_yscale('log', base=2)
 
     fig.tight_layout()
     fig.savefig(fileNameNoExtension + ".graph.png", bbox_inches='tight')

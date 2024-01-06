@@ -69,7 +69,6 @@ void DebugOutput_Points_float2::Output(const std::vector<float2>& points, const 
 	{
 		sprintf_s(fileName, "%s_%i_%i.csv", baseFileName, progressIndex, m_numProgressResults);
 		MakePointsCSV(points, fileName);
-
 	}
 
 	if (m_makePointImage)
@@ -278,5 +277,129 @@ void DebugOutput_Points_float2::MakeGaussImage(const std::vector<float2>& points
 		char fileName[1024];
 		sprintf_s(fileName, "%s%s.gauss.png", baseFileName, permutationString);
 		stbi_write_png(fileName, m_gaussImageSize, m_gaussImageSize, 3, pixels.data(), 0);
+	}
+}
+
+void DebugOutput_Texture1D_float::Output(const std::vector<float>& points, const char* baseFileName, int iteration, int iterationCount)
+{
+	// Don't report progress if we shouldn't
+	if (m_numProgressResults == 0)
+		return;
+
+	int progressInterval = iterationCount / m_numProgressResults;
+	int progressIndex = (iteration == iterationCount) ? m_numProgressResults : iteration / progressInterval;
+	if (iteration != iterationCount && (iteration % progressInterval) != 0)
+		return;
+
+	if (iteration == 0 && !m_reportStartingState)
+		return;
+
+	// Write text
+	char fileName[1024];
+	if (m_writeTxt)
+	{
+		sprintf_s(fileName, "%s_%i_%i.txt", baseFileName, progressIndex, m_numProgressResults);
+		FILE* file = nullptr;
+		fopen_s(&file, fileName, "wb");
+
+		fprintf(file, "float points[] =\n{\n");
+		for (size_t index = 0; index < points.size(); ++index)
+			fprintf(file, "    %ff,\n", points[index]);
+
+		fprintf(file, "};\n");
+
+		fclose(file);
+	}
+
+	// Write csv
+	if (m_writeTxt)
+	{
+		sprintf_s(fileName, "%s_%i_%i.csv", baseFileName, progressIndex, m_numProgressResults);
+		FILE* file = nullptr;
+		fopen_s(&file, fileName, "wb");
+
+		fprintf(file, "\"X\"\n");
+
+		for (size_t index = 0; index < points.size(); ++index)
+			fprintf(file, "\"%f\"\n", points[index]);
+
+		fclose(file);
+	}
+
+	// Make image
+	if (m_makeImage)
+	{
+		std::vector<unsigned char> pixels(points.size() * 3, 255);
+		for (size_t i = 0; i < points.size(); ++i)
+		{
+			unsigned char c = (unsigned char)Clamp(points[i] * 255.0f, 0.0f, 255.0f);
+			pixels[i * 3 + 0] = c;
+			pixels[i * 3 + 1] = c;
+			pixels[i * 3 + 2] = c;
+		}
+		sprintf_s(fileName, "%s_%i_%i.texture1D.png", baseFileName, progressIndex, m_numProgressResults);
+		stbi_write_png(fileName, int(points.size()), 1, 3, pixels.data(), 0);
+	}
+}
+
+void DebugOutput_Texture2D_float::Output(const std::vector<float>& points, const char* baseFileName, int iteration, int iterationCount)
+{
+	// Don't report progress if we shouldn't
+	if (m_numProgressResults == 0)
+		return;
+
+	int progressInterval = iterationCount / m_numProgressResults;
+	int progressIndex = (iteration == iterationCount) ? m_numProgressResults : iteration / progressInterval;
+	if (iteration != iterationCount && (iteration % progressInterval) != 0)
+		return;
+
+	if (iteration == 0 && !m_reportStartingState)
+		return;
+
+	// Write text
+	char fileName[1024];
+	if (m_writeTxt)
+	{
+		sprintf_s(fileName, "%s_%i_%i.txt", baseFileName, progressIndex, m_numProgressResults);
+		FILE* file = nullptr;
+		fopen_s(&file, fileName, "wb");
+
+		fprintf(file, "float points[] =\n{\n");
+		for (size_t index = 0; index < points.size(); ++index)
+			fprintf(file, "    %ff,\n", points[index]);
+
+		fprintf(file, "};\n");
+
+		fclose(file);
+	}
+
+	// Write csv
+	if (m_writeTxt)
+	{
+		sprintf_s(fileName, "%s_%i_%i.csv", baseFileName, progressIndex, m_numProgressResults);
+		FILE* file = nullptr;
+		fopen_s(&file, fileName, "wb");
+
+		fprintf(file, "\"X\"\n");
+
+		for (size_t index = 0; index < points.size(); ++index)
+			fprintf(file, "\"%f\"\n", points[index]);
+
+		fclose(file);
+	}
+
+	// Make image
+	if (m_makeImage)
+	{
+		std::vector<unsigned char> pixels(points.size() * 3, 255);
+		for (size_t i = 0; i < points.size(); ++i)
+		{
+			unsigned char c = (unsigned char)Clamp(points[i] * 255.0f, 0.0f, 255.0f);
+			pixels[i * 3 + 0] = c;
+			pixels[i * 3 + 1] = c;
+			pixels[i * 3 + 2] = c;
+		}
+		sprintf_s(fileName, "%s_%i_%i.texture2D.png", baseFileName, progressIndex, m_numProgressResults);
+		stbi_write_png(fileName, m_width, (int)points.size() / m_width, 3, pixels.data(), 0);
 	}
 }

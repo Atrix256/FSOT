@@ -11,12 +11,36 @@
 #include "CDFs.h"
 #include "DebugOutput.h"
 
+void GenerateRandomFloat(std::mt19937& rng, float& p)
+{
+	std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+	p = dist(rng);
+}
+
+void GenerateRandomDirectionFloat(std::mt19937& rng, float& direction)
+{
+	std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+	direction = dist(rng) >= 0.0f ? 1.0f : -1.0f;
+}
+
+float ProjectPoints1D(float p, float dir)
+{
+	return p * dir;
+}
 
 void GenerateRandomFloat2(std::mt19937& rng, float2& p)
 {
 	std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
 	p.x = dist(rng);
 	p.y = dist(rng);
+}
+
+void GenerateRandomDirectionFloat2(std::mt19937& rng, float2& direction)
+{
+	std::normal_distribution<float> dist(0.0f, 1.0f);
+	direction.x = dist(rng);
+	direction.y = dist(rng);
+	direction = Normalize(direction);
 }
 
 int main(int argc, char** argv)
@@ -26,9 +50,12 @@ int main(int argc, char** argv)
 	static const bool c_doGradFixComparison = false;
 	static const bool c_doMulticlass = false;
 	static const bool c_doProgressive = false;
-	static const bool c_doProjective = true;
+	static const bool c_doToroidalProgressiveBig = false;
+	static const bool c_doToroidalProgressiveSmall = false;
+	static const bool c_doProjective = false;
 
-	static const bool c_do1DBNTexture = true;
+	static const bool c_do1DBNTexture = false;
+	static const bool c_do2DBNTexture = true;
 
 	// 1) Show the benefit of the gradient scaling fix
 	// 2) Compare stratifying the line vs not
@@ -40,24 +67,23 @@ int main(int argc, char** argv)
 		fsot.AddClass<CDF_UniformSquare, Filter_All>();
 		fsot.m_batchSize = 64;
 		fsot.m_numIterations = 1000;
-		fsot.m_useGradientScalingFactor = false;
-		fsot.m_stratifyLine = false;
 
 		// 1) Show the benefit of the gradient scaling fix
-		fsot.GeneratePoints<DebugOutput_Points_float2>(1024, "out/GradFixNoStratifyNoToroidalNo", 1, GenerateRandomFloat2);
-
+		fsot.m_useGradientScalingFactor = false;
+		fsot.GeneratePoints<DebugOutput_Points_float2>(1024, "out/GradFixNoStratifyNoToroidalNo", 1, GenerateRandomFloat2, GenerateRandomDirectionFloat2, Dot);
 		fsot.m_useGradientScalingFactor = true;
-		fsot.GeneratePoints<DebugOutput_Points_float2>(1024, "out/GradFixYesStratifyNoToroidalNo", 1, GenerateRandomFloat2);
+
+		fsot.GeneratePoints<DebugOutput_Points_float2>(1024, "out/GradFixYesStratifyNoToroidalNo", 1, GenerateRandomFloat2, GenerateRandomDirectionFloat2, Dot);
 
 		// 2) Compare stratifying the line vs not
 		fsot.m_stratifyLine = true;
-		fsot.GeneratePoints<DebugOutput_Points_float2>(1024, "out/GradFixYesStratifyYesToroidalNo", 1, GenerateRandomFloat2);
+		fsot.GeneratePoints<DebugOutput_Points_float2>(1024, "out/GradFixYesStratifyYesToroidalNo", 1, GenerateRandomFloat2, GenerateRandomDirectionFloat2, Dot);
 		fsot.m_stratifyLine = false;
 
 		/*
 		// 3) Compare toroidal fixup vs not
 		fsot.m_toroidalFixup = true;
-		fsot.GeneratePoints<PointColoringObject_OneSetBlack>(1024, "out/GradFixYesStratifyNoToroidalYes", 1, GenerateRandomFloat2);
+		fsot.GeneratePoints<PointColoringObject_OneSetBlack>(1024, "out/GradFixYesStratifyNoToroidalYes", 1, GenerateRandomFloat2, GenerateRandomDirectionFloat2, Dot);
 		fsot.m_toroidalFixup = false;
 		*/
 	}
@@ -72,10 +98,8 @@ int main(int argc, char** argv)
 		fsot.AddClass<CDF_UniformSquare, Filter_All>(2.0f);
 		fsot.m_batchSize = 256;
 		fsot.m_numIterations = 4096;
-		fsot.m_useGradientScalingFactor = true;
-		fsot.m_stratifyLine = false;
 
-		fsot.GeneratePoints<DebugOutput_Points_float2_TwoClass>(1024, "out/Multiclass", 1, GenerateRandomFloat2);
+		fsot.GeneratePoints<DebugOutput_Points_float2_TwoClass>(1024, "out/Multiclass", 1, GenerateRandomFloat2, GenerateRandomDirectionFloat2, Dot);
 	}
 
 	// Progressive vs Non progressive
@@ -85,18 +109,50 @@ int main(int argc, char** argv)
 		fsot_progressive.AddClass<CDF_UniformSquare, Filter_Progressive>();
 		fsot_progressive.m_batchSize = 128;
 		fsot_progressive.m_numIterations = 4096;
-		fsot_progressive.m_useGradientScalingFactor = true;
-		fsot_progressive.m_stratifyLine = false;
 
 		FSOT<float2> fsot_not;
 		fsot_not.AddClass<CDF_UniformSquare, Filter_All>();
 		fsot_not.m_batchSize = 128;
 		fsot_not.m_numIterations = 4096;
-		fsot_not.m_useGradientScalingFactor = true;
-		fsot_not.m_stratifyLine = false;
 
-		fsot_progressive.GeneratePoints<DebugOutput_Points_float2_Progressive<4>>(1024, "out/ProgressiveYes", 1, GenerateRandomFloat2);
-		fsot_not.GeneratePoints<DebugOutput_Points_float2_Progressive<4>>(1024, "out/ProgressiveNo", 1, GenerateRandomFloat2);
+		fsot_progressive.GeneratePoints<DebugOutput_Points_float2_Progressive<4, 1>>(1024, "out/ProgressiveYes", 1, GenerateRandomFloat2, GenerateRandomDirectionFloat2, Dot);
+		fsot_not.GeneratePoints<DebugOutput_Points_float2_Progressive<4, 1>>(1024, "out/ProgressiveNo", 1, GenerateRandomFloat2, GenerateRandomDirectionFloat2, Dot);
+	}
+
+	// Toroidally Progressive - Many points
+	if (c_doToroidalProgressiveBig)
+	{
+		static const int c_numPoints = 1024;
+
+		FSOT<float2> fsot;
+		fsot.m_batchSize = c_numPoints / 8;
+		fsot.m_numIterations = 4096;
+
+		for (int i = 0; i < c_numPoints; ++i)
+		{
+			auto& c = fsot.AddClass<CDF_UniformSquare, Filter_Progressive>();
+			c.m_filter.m_firstIndex = i;
+		}
+
+		fsot.GeneratePoints<DebugOutput_Points_float2_Progressive<4, 4>>(c_numPoints, "out/TProgressiveBig", 1, GenerateRandomFloat2, GenerateRandomDirectionFloat2, Dot);
+	}
+
+	// Toroidally Progressive - Fewer points
+	if (c_doToroidalProgressiveSmall)
+	{
+		static const int c_numPoints = 64;
+
+		FSOT<float2> fsot;
+		fsot.m_batchSize = c_numPoints / 8;
+		fsot.m_numIterations = 4096;
+
+		for (int i = 0; i < c_numPoints; ++i)
+		{
+			auto& c = fsot.AddClass<CDF_UniformSquare, Filter_Progressive>();
+			c.m_filter.m_firstIndex = i;
+		}
+
+		fsot.GeneratePoints<DebugOutput_Points_float2_Progressive<4, 4>>(c_numPoints, "out/TProgressiveSmall", 1, GenerateRandomFloat2, GenerateRandomDirectionFloat2, Dot);
 	}
 
 	// Projective
@@ -117,14 +173,12 @@ int main(int argc, char** argv)
 			fsot.AddClass<CDF_UniformSquare, Filter_All>(c_MaxRadius2D / c_totalWeight);
 			fsot.m_batchSize = 64;
 			fsot.m_numIterations = 10000;
-			fsot.m_useGradientScalingFactor = true;
-			fsot.m_stratifyLine = false;
 
 			// For 1000 points, these weights are: 0.028, 0.028, 0.94.
 			// if we do the other way in the projective blue noise paper where it's 1D/2D and 2D/2D respectively, it's nearly the same:
 			// 0.029, 0.029, 1. 
 
-			fsot.GeneratePoints<DebugOutput_Points_float2>(c_numPoints, "out/Projective_Paper", 1, GenerateRandomFloat2);
+			fsot.GeneratePoints<DebugOutput_Points_float2>(c_numPoints, "out/Projective_Paper", 1, GenerateRandomFloat2, GenerateRandomDirectionFloat2, Dot);
 		}
 
 		// Use equal weighting for the projections, like the sliced optimal transport paper uses
@@ -135,10 +189,8 @@ int main(int argc, char** argv)
 			fsot.AddClass<CDF_UniformSquare, Filter_All>();
 			fsot.m_batchSize = 64;
 			fsot.m_numIterations = 10000;
-			fsot.m_useGradientScalingFactor = true;
-			fsot.m_stratifyLine = false;
 
-			fsot.GeneratePoints<DebugOutput_Points_float2>(c_numPoints, "out/Projective_Equal", 1, GenerateRandomFloat2);
+			fsot.GeneratePoints<DebugOutput_Points_float2>(c_numPoints, "out/Projective_Equal", 1, GenerateRandomFloat2, GenerateRandomDirectionFloat2, Dot);
 		}
 
 		// use double weighting for the combined result
@@ -149,23 +201,75 @@ int main(int argc, char** argv)
 			fsot.AddClass<CDF_UniformSquare, Filter_All>(2.0f);
 			fsot.m_batchSize = 64;
 			fsot.m_numIterations = 10000;
-			fsot.m_useGradientScalingFactor = true;
-			fsot.m_stratifyLine = false;
 
-			fsot.GeneratePoints<DebugOutput_Points_float2>(c_numPoints, "out/Projective_SemiEqual", 1, GenerateRandomFloat2);
+			fsot.GeneratePoints<DebugOutput_Points_float2>(c_numPoints, "out/Projective_SemiEqual", 1, GenerateRandomFloat2, GenerateRandomDirectionFloat2, Dot);
 		}
 	}
 
-#if 0
-
 	if (c_do1DBNTexture)
 	{
-		//FSOT<1> plan;
+		static const int c_numPixels = 1024;
+		static const int c_filterSize = 4;
 
-		//FSOTClass<ICDF_UniformSquare, Filter_Range<0.5f, 1.0f>> secondHalf;
+		FSOT<float> fsot;
+		fsot.m_batchSize = 512;
+		fsot.m_numIterations = 10000;
+
+		// This promotes a flat histogram across the texture
+		fsot.AddClass<CDF_Uniform1D, Filter_All>();
+
+		// These promote diversity in small regions of pixels
+		for (int i = 0; i < c_numPixels; ++i)
+		{
+			auto& c = fsot.AddClass<CDF_Uniform1D, Filter_Range1D>();
+			c.m_filter.m_index = i;
+			c.m_filter.m_radius = c_filterSize;
+		}
+
+		fsot.GeneratePoints<DebugOutput_Texture1D_float>(c_numPixels, "out/Texture1D", 1, GenerateRandomFloat, GenerateRandomDirectionFloat, ProjectPoints1D);
+
+		// TODO: tune the settings
+		// TODO: should we jitter?
+		// TODO: compare with flat histogram class, and not. flat histogram thing makes variety i think, instead of everything going flat
+		// TODO: also, box filter vs gauss!
+		// TODO: should this be simplified for 1d textures? don't need random projections, only random selections and no repeats? or maybe ok as is.
+		//   Or maybe we need an option for shuffling then choosing the first N instead of randomly selecting.
 	}
 
-#endif
+	if (c_do2DBNTexture)
+	{
+		static const int c_imageSize = 64;
+		static const int c_numPixels = c_imageSize * c_imageSize;
+
+		static const int c_filterSizes[] = { 1, 2, 3 };
+
+		for (int filterSize : c_filterSizes)
+		{
+			FSOT<float> fsot;
+			fsot.m_batchSize = 512;
+			fsot.m_numIterations = 10000;
+
+			// This promotes a flat histogram across the texture
+			fsot.AddClass<CDF_Uniform1D, Filter_All>();
+
+			// These promote diversity in small regions of pixels
+			for (int i = 0; i < c_numPixels; ++i)
+			{
+				auto& c = fsot.AddClass<CDF_Uniform1D, Filter_Range2D>();
+				c.m_filter.m_index = i;
+				c.m_filter.m_radius = filterSize;
+				c.m_filter.m_width = c_imageSize;
+			}
+
+			char fileNameBase[256];
+			sprintf_s(fileNameBase, "out/Texture2D_f%i", filterSize);
+
+			fsot.GeneratePoints<DebugOutput_Texture2D_float>(c_numPixels, fileNameBase, 1, GenerateRandomFloat, GenerateRandomDirectionFloat, ProjectPoints1D);
+		}
+
+		// TODO: finish this
+	}
+
 
 	return 0;
 }
@@ -173,6 +277,13 @@ int main(int argc, char** argv)
 /*
 
 TODO:
+* make "DebugOutput_Texture2D_float::Output" spit out 2d arrays for txt. and csv?
+* maybe combine DebugOutput_Texture1D_float and DebugOutput_Texture2D_float into one thing
+* the debug output objects need to let the user change values on them, so pass an object to generate points instead of a type.
+ * like DebugOutput_Texture2D_float.m_width!
+* for toroidally progressive, we could also try and add a "all points are blue together" constraint?
+* are you biasing towards the first class in random selection? your toroidally progressive point sets seem like that might be true?
+* the code saving progressive point sets as text like for a header file just saves the same points over and over again.
 * clean up code and make a "2d" version for textures.
  * ! start by making a 1d texture. all it is, is "positional membership", with a bunch of overlapping sets of membership.
   * it makes diversity in small regions.
@@ -201,7 +312,7 @@ TODO:
 * your projective noise with balanced weights isn't giving as good a power spectrum as the SOT paper does.
  * see page 9: http://www.geometry.caltech.edu/pubs/PBCIW+20.pdf
  * maybe try their code if they have any
-
+? should we do something with numerical CDF (images?). might look better after adam is sorted out!
 
 Toroidal Progressiveness
 * compare vs halton, and R2

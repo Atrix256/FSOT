@@ -10,11 +10,19 @@ struct float2
 	float x = 0.0f;
 	float y = 0.0f;
 
-	float2 operator+ (const float2& other) const
+	float2 operator + (const float2& other) const
 	{
 		float2 ret;
 		ret.x = x + other.x;
 		ret.y = y + other.y;
+		return ret;
+	}
+
+	float2 operator * (float other) const
+	{
+		float2 ret;
+		ret.x = x * other;
+		ret.y = y * other;
 		return ret;
 	}
 };
@@ -27,6 +35,11 @@ inline float Dot(const float2& a, const float2& b)
 inline float Length(const float2& f)
 {
 	return std::sqrt(Dot(f, f));
+}
+
+inline float Length(float f)
+{
+	return std::abs(f);
 }
 
 inline float DistanceSquared(const float2& a, const float2& b)
@@ -65,6 +78,14 @@ inline float2 Normalize(const float2& f)
 inline float Lerp(float A, float B, float t)
 {
 	return A * (1.0f - t) + B * t;
+}
+
+inline float2 Lerp(const float2& A, const float2& B, float t)
+{
+	float2 ret;
+	ret.x = Lerp(A.x, B.x, t);
+	ret.y = Lerp(A.y, B.y, t);
+	return ret;
 }
 
 template <typename T>

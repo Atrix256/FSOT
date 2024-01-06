@@ -23,7 +23,7 @@ public:
 
 	virtual float ICDF(float y, const TVecType& direction) const = 0;
 	virtual void Filter(const std::vector<TVecType>& points, float subClassZ, std::vector<int>& memberPoints) const = 0;
-	virtual TVecType GetRandomDirection(std::mt19937& rng) const = 0;
+	virtual bool GetRandomDirection(std::mt19937& rng, TVecType& direction) const = 0;
 };
 
 template <typename TVecType, typename TCDF, typename TFilter>
@@ -38,24 +38,17 @@ public:
 
 	float ICDF(float y, const TVecType& direction) const override final
 	{
-		return TCDF::ICDF(y, direction);
+		return m_cdf.ICDF(y, direction);
 	}
 
 	void Filter(const std::vector<TVecType>& points, float subClassZ, std::vector<int>& memberPoints) const override final
 	{
-		return TFilter::Filter(points, subClassZ, memberPoints);
+		return m_filter.Filter(points, subClassZ, memberPoints);
 	}
 
-	virtual TVecType GetRandomDirection(std::mt19937& rng) const override final
+	bool GetRandomDirection(std::mt19937& rng, TVecType& direction) const override final
 	{
-		TVecType direction;
-		if (!TCDF::OverrideDirection(direction))
-		{
-			std::normal_distribution<float> distNormal(0.0f, 1.0f);
-			direction.x = distNormal(rng);
-			direction.y = distNormal(rng);
-		}
-		return Normalize(direction);
+		return m_cdf.OverrideDirection(direction);
 	}
 
 	TCDF m_cdf;
@@ -91,10 +84,11 @@ public:
 	}
 
 	template <typename TCDF, typename TFilter>
-	void AddClass(float weight = 1.0f)
+	FSOTClass<TVecType, TCDF, TFilter>& AddClass(float weight = 1.0f)
 	{
-		FSOTClassBase<TVecType>* newClass = new FSOTClass<TVecType, TCDF, TFilter>(weight);
+		FSOTClass<TVecType, TCDF, TFilter>* newClass = new FSOTClass<TVecType, TCDF, TFilter>(weight);
 		m_classes.push_back(newClass);
+		return *newClass;
 	}
 
 	std::vector<FSOTClassBase<TVecType>*> m_classes;
@@ -109,8 +103,8 @@ public:
 	bool m_showProgress = true;
 	bool m_saveAvgMovementCSV = true;
 
-	template <typename TDebugOutput, typename TGenerateRandomPointFn>
-	std::vector<TVecType> GeneratePoints(int numPoints, const char* baseFileName, int numProgressImages, const TGenerateRandomPointFn& GenerateRandomPointFn)
+	template <typename TDebugOutput, typename TGenerateRandomPointFn, typename TGenerateRandomDirectionFn, typename TProjectPointsFn>
+	std::vector<TVecType> GeneratePoints(int numPoints, const char* baseFileName, int numProgressImages, const TGenerateRandomPointFn& GenerateRandomPointFn, const TGenerateRandomDirectionFn& GenerateRandomDirectionFn, const TProjectPointsFn& ProjectPointsFn)
 	{
 		// get the timestamp of when this started
 		std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
@@ -210,11 +204,13 @@ public:
 					continue;
 
 				// generate a random projection direction
-				TVecType direction = FSOTClass.GetRandomDirection(rng);
+				TVecType direction;
+				if (!FSOTClass.GetRandomDirection(rng, direction))
+					GenerateRandomDirectionFn(rng, direction);
 
 				// Project the points
 				for (int i : batchData.sorted)
-					batchData.projections[i] = Dot(direction, points[i]);
+					batchData.projections[i] = ProjectPointsFn(direction, points[i]);
 
 				// sort the projections
 				std::sort(batchData.sorted.begin(), batchData.sorted.end(),
@@ -249,8 +245,7 @@ public:
 
 					float delta = pointCountScalingFactor * projectionDiff / gradientFactor;
 
-					batchData.batchDirections[batchData.sorted[i]].x = direction.x * delta;
-					batchData.batchDirections[batchData.sorted[i]].y = direction.y * delta;
+					batchData.batchDirections[batchData.sorted[i]] = direction * delta;
 				}
 			}
 
@@ -260,10 +255,7 @@ public:
 				{
 					float alpha = 1.0f / float(batchIndex + 1);
 					for (size_t i = 0; i < numPoints; ++i)
-					{
-						allBatchData[0].batchDirections[i].x = Lerp(allBatchData[0].batchDirections[i].x, allBatchData[batchIndex].batchDirections[i].x, alpha);
-						allBatchData[0].batchDirections[i].y = Lerp(allBatchData[0].batchDirections[i].y, allBatchData[batchIndex].batchDirections[i].y, alpha);
-					}
+						allBatchData[0].batchDirections[i] = Lerp(allBatchData[0].batchDirections[i], allBatchData[batchIndex].batchDirections[i], alpha);
 				}
 			}
 
